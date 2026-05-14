@@ -1,0 +1,67 @@
+[
+  {
+    "id": "halo-mcc",
+    "title": "Halo: The Master Chief Collection",
+    "developer": "343 Industries",
+    "publisher": "Xbox Game Studios",
+    "genres": ["Action", "FPS", "Shooter"],
+    "rating": "4.8",
+    "size": "97.6 GB",
+    "releaseDate": "2019-12-03",
+    "description": "Halo: The Master Chief Collection is a compilation of first-person shooter video games in the Halo series. Experience all 6 Halo games in one legendary collection.",
+    "imageTile": "https://images.pexels.com/photos/3165335/pexels-photo-3165335.jpeg?auto=compress&cs=tinysrgb&w=400&h=600&fit=crop",
+    "hero": "https://images.pexels.com/photos/3165335/pexels-photo-3165335.jpeg?auto=compress&cs=tinysrgb&w=1200&h=600&fit=crop"
+  },
+  {
+    "id": "forza-horizon-5",
+    "title": "Forza Horizon 5",
+    "developer": "Playground Games",
+    "publisher": "Xbox Game Studios",
+    "genres": ["Racing", "Open World"],
+    "rating": "4.9",
+    "size": "103 GB",
+    "releaseDate": "2021-11-09",
+    "description": "Explore the vibrant open world landscapes of Mexico with limitless, fun driving action in hundreds of the world's greatest cars.",
+    "imageTile": "https://images.pexels.com/photos/1545743/pexels-photo-1545743.jpeg?auto=compress&cs=tinysrgb&w=400&h=600&fit=crop",
+    "hero": "https://images.pexels.com/photos/1545743/pexels-photo-1545743.jpeg?auto=compress&cs=tinysrgb&w=1200&h=600&fit=crop"
+  },
+  {
+    "id": "doom-dark-ages",
+    "title": "DOOM: The Dark Ages",
+    "developer": "id Software",
+    "publisher": "Bethesda Softworks",
+    "genres": ["Action", "FPS", "Shooter"],
+    "rating": "4.7",
+    "size": "85 GB",
+    "releaseDate": "2025-05-15",
+    "description": "The prequel to DOOM (2016). Before he was the DOOM Slayer, he was the Hell Walker. Experience raw, brutal combat in a dark medieval world.",
+    "imageTile": "https://images.pexels.com/photos/1670977/pexels-photo-1670977.jpeg?auto=compress&cs=tinysrgb&w=400&h=600&fit=crop",
+    "hero": "https://images.pexels.com/photos/1670977/pexels-photo-1670977.jpeg?auto=compress&cs=tinysrgb&w=1200&h=600&fit=crop"
+  },
+  {
+    "id": "starfield",
+    "title": "Starfield",
+    "developer": "Bethesda Game Studios",
+    "publisher": "Bethesda Softworks",
+    "genres": ["RPG", "Action", "Sci-Fi"],
+    "rating": "4.2",
+    "size": "139 GB",
+    "releaseDate": "2023-09-06",
+    "description": "Starfield is the first new universe in 25 years from Bethesda Game Studios. In this next-generation role-playing game set amongst the stars, create any character you want and explore with unparalleled freedom.",
+    "imageTile": "https://images.pexels.com/photos/1169754/pexels-photo-1169754.jpeg?auto=compress&cs=tinysrgb&w=400&h=600&fit=crop",
+    "hero": "https://images.pexels.com/photos/1169754/pexels-photo-1169754.jpeg?auto=compress&cs=tinysrgb&w=1200&h=600&fit=crop"
+  },
+  {
+    "id": "metaphor-refantazio",
+    "title": "Metaphor: ReFantazio",
+    "developer": "Atlus",
+    "publisher": "SEGA",
+    "genres": ["RPG", "JRPG", "Turn-Based"],
+    "rating": "4.9",
+    "size": "27.3 GB",
+    "releaseDate": "2024-10-11",
+    "description": "A new fantasy RPG from the award-winning Persona series creator. Embark on an epic journey in a dark medieval world filled with monsters and magic.",
+    "imageTile": "https://images.pexels.com/photos/1293120/pexels-photo-1293120.jpeg?auto=compress&cs=tinysrgb&w=400&h=600&fit=crop",
+    "hero": "https://images.pexels.com/photos/1293120/pexels-photo-1293120.jpeg?auto=compress&cs=tinysrgb&w=1200&h=600&fit=crop"
+  }
+]
