@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   openFolderDialog: () => ipcRenderer.invoke('open_folder_dialog'),
   checkForUpdates: () => ipcRenderer.invoke('check_for_updates'),
+  checkNow: () => ipcRenderer.invoke('check_now'),
   downloadUpdate: () => ipcRenderer.invoke('download_update'),
   installUpdate: () => ipcRenderer.invoke('install_update'),
   onUpdateAvailable: (callback) => ipcRenderer.on('update_available', (_e, d) => callback(d)),

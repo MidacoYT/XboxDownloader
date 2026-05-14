@@ -26,6 +26,7 @@ interface ElectronAPI {
   getPackageInfo: (productId: string) => Promise<PackageInfo | null>;
   openFolderDialog: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   checkForUpdates: () => Promise<{ currentVersion: string; latestVersion: string; hasUpdate: boolean }>;
+  checkNow: () => Promise<{ checking: boolean }>;
   downloadUpdate: () => void;
   installUpdate: () => void;
   onUpdateAvailable: (callback: (data: { version: string }) => void) => void;

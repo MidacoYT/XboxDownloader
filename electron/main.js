@@ -340,29 +340,54 @@ function setupAutoUpdater() {
   }
 
   autoUpdater.autoDownload = false;
+  autoUpdater.allowPrerelease = false;
 
-  autoUpdater.on('checking-for-update', () => log('[AutoUpdater] Checking...'));
+  log('[AutoUpdater] Initializing...');
+  log('[AutoUpdater] Current version:', appVersion);
+  log('[AutoUpdater] Feed URL:', autoUpdater.getFeedURL ? 'checking...' : 'N/A');
+
+  autoUpdater.on('checking-for-update', () => log('[AutoUpdater] Checking for updates...'));
   autoUpdater.on('update-available', (info) => {
-    log('[AutoUpdater] Available:', info.version);
+    log('[AutoUpdater] ✅ Update available:', info.version);
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update_available', { version: info.version, url: '' });
+      mainWindow.webContents.send('console_log', '[AutoUpdater] ✅ Update available: ' + info.version);
+      mainWindow.webContents.send('update_available', { version: info.version });
     }
   });
-  autoUpdater.on('update-not-available', () => log('[AutoUpdater] Up to date'));
-  autoUpdater.on('error', (err) => log('[AutoUpdater] Error:', err.message));
+  autoUpdater.on('update-not-available', (info) => {
+    log('[AutoUpdater] ❌ No update available');
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('console_log', '[AutoUpdater] ❌ Already up to date');
+    }
+  });
+  autoUpdater.on('error', (err) => {
+    log('[AutoUpdater] ❌ Error:', err.message, err.stack);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('console_log', '[AutoUpdater] ❌ Error: ' + err.message);
+    }
+  });
   autoUpdater.on('download-progress', (progress) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('update_download_progress', { percent: progress.percent, bytesPerSecond: progress.bytesPerSecond });
     }
   });
   autoUpdater.on('update-downloaded', () => {
-    log('[AutoUpdater] Downloaded, installing...');
+    log('[AutoUpdater] ✅ Downloaded, restarting...');
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('update_downloaded');
     }
   });
 
-  autoUpdater.checkForUpdates();
+  try {
+    autoUpdater.checkForUpdates().catch(err => {
+      log('[AutoUpdater] checkForUpdates() rejected:', err.message);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('console_log', '[AutoUpdater] checkForUpdates failed: ' + err.message);
+      }
+    });
+  } catch (err) {
+    log('[AutoUpdater] checkForUpdates() threw:', err.message);
+  }
 }
 
 ipcMain.handle('check_for_updates', () => {
@@ -380,6 +405,12 @@ ipcMain.handle('download_update', () => {
 
 ipcMain.handle('install_update', () => {
   autoUpdater.quitAndInstall();
+});
+
+ipcMain.handle('check_now', () => {
+  if (isDev) return { currentVersion: appVersion, latestVersion: appVersion, hasUpdate: false };
+  autoUpdater.checkForUpdates();
+  return { checking: true };
 });
 
 // IPC Handler - Download & extract directly via XvdTool streaming
