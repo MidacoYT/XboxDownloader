@@ -20,12 +20,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Inject version
+      - name: Get version from package.json
         run: |
-          $ver = "1.0.${{ github.run_number }}"
-          $json = Get-Content package.json | ConvertFrom-Json
-          $json.version = $ver
-          $json | ConvertTo-Json -Depth 10 | Set-Content package.json
+          $ver = (Get-Content package.json | ConvertFrom-Json).version
           echo "BUILD_VERSION=$ver" >> $env:GITHUB_ENV
 
       - name: Build & publish
