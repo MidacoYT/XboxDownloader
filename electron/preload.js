@@ -13,11 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFolderDialog: () => ipcRenderer.invoke('open_folder_dialog'),
   checkForUpdates: () => ipcRenderer.invoke('check_for_updates'),
   checkNow: () => ipcRenderer.invoke('check_now'),
-  downloadUpdate: () => ipcRenderer.invoke('download_update'),
-  installUpdate: () => ipcRenderer.invoke('install_update'),
   onUpdateAvailable: (callback) => ipcRenderer.on('update_available', (_e, d) => callback(d)),
-  onUpdateProgress: (callback) => ipcRenderer.on('update_download_progress', (_e, d) => callback(d)),
-  onUpdateDownloaded: (callback) => ipcRenderer.on('update_downloaded', () => callback()),
   downloadFile: (url, downloadPath, gameId, gameName) => {
     if (typeof url !== 'string' || !url) return Promise.reject(new Error('Invalid URL'));
     if (typeof downloadPath !== 'string' || !downloadPath) return Promise.reject(new Error('Invalid download path'));

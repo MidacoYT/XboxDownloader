@@ -3,7 +3,6 @@
   "version": "1.0.5",
   "description": "Xbox Launcher for PC",
   "author": "MidacoYT",
-  "author": "MidacoYT",
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
@@ -19,7 +18,6 @@
     "@alepertu/metacritic-api": "^2.0.4",
     "clsx": "^2.1.1",
     "dashjs": "^5.1.1",
-    "electron-updater": "^6.8.3",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.14.0",
     "react": "^18.3.1",
@@ -50,8 +48,14 @@
       "public/**/*"
     ],
     "extraResources": [
-      { "from": "Xvd", "to": "Xvd" },
-      { "from": "OnlineFix", "to": "OnlineFix" }
+      {
+        "from": "Xvd",
+        "to": "Xvd"
+      },
+      {
+        "from": "OnlineFix",
+        "to": "OnlineFix"
+      }
     ],
     "publish": {
       "provider": "github",

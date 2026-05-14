@@ -3,7 +3,6 @@ const path = require('path');
 const https = require('https');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const { autoUpdater } = require('electron-updater');
 
 let mainWindow = null;
 const xvdToolPath = path.join(__dirname, '..', 'Xvd', 'XvdTool.Streaming.exe');
@@ -332,85 +331,56 @@ ipcMain.handle('open_folder_dialog', async () => {
   return result;
 });
 
-// Auto-updater
-function setupAutoUpdater() {
-  if (isDev) {
-    log('[AutoUpdater] Skipped in dev mode');
-    return;
-  }
+// Simple GitHub release checker (no electron-updater dependency)
+const GITHUB_API = 'https://api.github.com/repos/MidacoYT/XboxDownloader/releases/latest';
 
-  autoUpdater.autoDownload = false;
-  autoUpdater.allowPrerelease = false;
-
-  log('[AutoUpdater] Initializing...');
-  log('[AutoUpdater] Current version:', appVersion);
-  log('[AutoUpdater] Feed URL:', autoUpdater.getFeedURL ? 'checking...' : 'N/A');
-
-  autoUpdater.on('checking-for-update', () => log('[AutoUpdater] Checking for updates...'));
-  autoUpdater.on('update-available', (info) => {
-    log('[AutoUpdater] ✅ Update available:', info.version);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('console_log', '[AutoUpdater] ✅ Update available: ' + info.version);
-      mainWindow.webContents.send('update_available', { version: info.version });
-    }
-  });
-  autoUpdater.on('update-not-available', (info) => {
-    log('[AutoUpdater] ❌ No update available');
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('console_log', '[AutoUpdater] ❌ Already up to date');
-    }
-  });
-  autoUpdater.on('error', (err) => {
-    log('[AutoUpdater] ❌ Error:', err.message, err.stack);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('console_log', '[AutoUpdater] ❌ Error: ' + err.message);
-    }
-  });
-  autoUpdater.on('download-progress', (progress) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update_download_progress', { percent: progress.percent, bytesPerSecond: progress.bytesPerSecond });
-    }
-  });
-  autoUpdater.on('update-downloaded', () => {
-    log('[AutoUpdater] ✅ Downloaded, restarting...');
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update_downloaded');
-    }
-  });
-
-  try {
-    autoUpdater.checkForUpdates().catch(err => {
-      log('[AutoUpdater] checkForUpdates() rejected:', err.message);
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('console_log', '[AutoUpdater] checkForUpdates failed: ' + err.message);
-      }
+function checkForUpdates() {
+  return new Promise((resolve) => {
+    const req = https.get(GITHUB_API, { headers: { 'User-Agent': 'Xbox-Downloader/1.0', Accept: 'application/vnd.github.v3+json' }, timeout: 10000 }, (res) => {
+      let body = '';
+      res.on('data', (c) => body += c);
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          const latestVer = (data.tag_name || '').replace(/^v/, '');
+          const hasUpdate = latestVer && latestVer !== appVersion;
+          const asset = data.assets?.find(a => a.name.endsWith('.exe') && a.name.includes('Setup'));
+          log('[Updater] Current:', appVersion, '| Latest:', latestVer, '| Has update:', hasUpdate);
+          resolve({ currentVersion: appVersion, latestVersion: latestVer, hasUpdate, downloadUrl: asset?.browser_download_url || '' });
+        } catch (e) {
+          log('[Updater] Parse error:', e.message);
+          resolve({ currentVersion: appVersion, latestVersion: appVersion, hasUpdate: false });
+        }
+      });
     });
-  } catch (err) {
-    log('[AutoUpdater] checkForUpdates() threw:', err.message);
+    req.on('error', (e) => {
+      log('[Updater] Request error:', e.message);
+      resolve({ currentVersion: appVersion, latestVersion: appVersion, hasUpdate: false });
+    });
+    req.end();
+  });
+}
+
+async function setupAutoUpdater() {
+  if (isDev) { log('[Updater] Skipped in dev mode'); return; }
+  log('[Updater] Checking for updates... (current:', appVersion + ')');
+  const info = await checkForUpdates();
+  if (info.hasUpdate && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update_available', { version: info.latestVersion, url: info.downloadUrl });
+    log('[Updater] Update available:', info.latestVersion);
+  } else {
+    log('[Updater] No update available');
   }
 }
 
-ipcMain.handle('check_for_updates', () => {
-  if (isDev) return { currentVersion: appVersion, latestVersion: appVersion, hasUpdate: false };
-  return autoUpdater.checkForUpdates().then(info => ({
-    currentVersion: appVersion,
-    latestVersion: info?.updateInfo?.version || appVersion,
-    hasUpdate: !!info,
-  })).catch(() => ({ currentVersion: appVersion, latestVersion: appVersion, hasUpdate: false }));
-});
+ipcMain.handle('check_for_updates', checkForUpdates);
 
-ipcMain.handle('download_update', () => {
-  autoUpdater.downloadUpdate();
-});
-
-ipcMain.handle('install_update', () => {
-  autoUpdater.quitAndInstall();
-});
-
-ipcMain.handle('check_now', () => {
-  if (isDev) return { currentVersion: appVersion, latestVersion: appVersion, hasUpdate: false };
-  autoUpdater.checkForUpdates();
-  return { checking: true };
+ipcMain.handle('check_now', async () => {
+  const info = await checkForUpdates();
+  if (info.hasUpdate && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update_available', { version: info.latestVersion, url: info.downloadUrl });
+  }
+  return info;
 });
 
 // IPC Handler - Download & extract directly via XvdTool streaming

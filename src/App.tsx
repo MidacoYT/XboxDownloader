@@ -49,7 +49,7 @@ export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [loadingStatus, setLoadingStatus] = useState('Initialisation...');
-  const [updateInfo, setUpdateInfo] = useState<{ version: string; downloading?: boolean; percent?: number } | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; url?: string } | null>(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -98,14 +98,8 @@ export default function App() {
 
   // Auto-update events
   useEffect(() => {
-    window.electronAPI?.onUpdateAvailable(({ version }) => {
-      setUpdateInfo({ version });
-    });
-    window.electronAPI?.onUpdateProgress(({ percent }) => {
-      setUpdateInfo(prev => prev ? { ...prev, downloading: true, percent } : null);
-    });
-    window.electronAPI?.onUpdateDownloaded(() => {
-      window.electronAPI?.installUpdate();
+    window.electronAPI?.onUpdateAvailable(({ version, url }) => {
+      setUpdateInfo({ version, url });
     });
   }, []);
 
@@ -670,29 +664,20 @@ export default function App() {
               display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
               animation: 'fadeInUp 0.3s ease',
             }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#a855f7' }}>
-                  {updateInfo.downloading
-                    ? `Téléchargement de la mise à jour... ${updateInfo.percent ? Math.round(updateInfo.percent) + '%' : ''}`
-                    : `Mise à jour disponible v${updateInfo.version}`}
-                </div>
-                {updateInfo.downloading && updateInfo.percent && (
-                  <div style={{ height: '4px', background: 'rgba(124,58,237,0.2)', borderRadius: '2px', marginTop: '6px', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${updateInfo.percent}%`, background: 'linear-gradient(90deg, #7c3aed, #a855f7)', borderRadius: '2px', transition: 'width 0.3s ease' }} />
-                  </div>
-                )}
+              <div style={{ flex: 1, fontSize: '0.82rem', fontWeight: 700, color: '#a855f7' }}>
+                Mise à jour disponible v{updateInfo.version}
               </div>
-              {!updateInfo.downloading && (
-                <button
-                  onClick={() => window.electronAPI?.downloadUpdate()}
+              {updateInfo.url && (
+                <a href={updateInfo.url}
                   style={{
                     padding: '7px 16px', borderRadius: '8px', flexShrink: 0, border: 'none',
                     background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
                     color: 'white', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
+                    textDecoration: 'none',
                   }}
                 >
-                  Mettre à jour
-                </button>
+                  Télécharger
+                </a>
               )}
             </div>
           )}
