@@ -28,13 +28,6 @@ jobs:
           $ver = (Get-Content package.json | ConvertFrom-Json).version
           echo "BUILD_VERSION=$ver" >> $env:GITHUB_ENV
 
-      - name: Import code signing certificate
-        if: env.CERT_FILE != ''
-        run: |
-          echo "${{ secrets.CERT_BASE64 }}" | certutil -decode - "$env:TEMP\cert.pfx"
-          echo "CERT_FILE=$env:TEMP\cert.pfx" >> $env:GITHUB_ENV
-          echo "CERT_PASS=${{ secrets.CERT_PASS }}" >> $env:GITHUB_ENV
-
       - name: Build & publish
         run: npm run publish
         env:

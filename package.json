@@ -1,6 +1,6 @@
 {
   "name": "xbox-downloader",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Xbox Launcher for PC",
   "author": "MidacoYT",
   "author": "MidacoYT",
@@ -67,9 +67,7 @@
           ]
         }
       ],
-      "icon": "public/icon.ico",
-      "certificateFile": "${env.CERT_FILE}",
-      "certificatePassword": "${env.CERT_PASS}"
+      "icon": "public/icon.ico"
     },
     "nsis": {
       "oneClick": false,
