@@ -67,7 +67,9 @@
           ]
         }
       ],
-      "icon": "public/icon.ico"
+      "icon": "public/icon.ico",
+      "certificateFile": "${env.CERT_FILE}",
+      "certificatePassword": "${env.CERT_PASS}"
     },
     "nsis": {
       "oneClick": false,
