@@ -3,13 +3,13 @@ const path = require('path');
 const https = require('https');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { autoUpdater } = require('electron-updater');
 
 let mainWindow = null;
 const xvdToolPath = path.join(__dirname, '..', 'Xvd', 'XvdTool.Streaming.exe');
 const onlineFixDir = path.join(__dirname, '..', 'OnlineFix');
 const isDev = !app.isPackaged;
 const appVersion = require('../package.json').version;
-const UPDATE_URL = 'https://raw.githubusercontent.com/MidacoYT/Games/refs/heads/main/version.json';
 
 function log(...args) {
   const msg = args.join(' ');
@@ -332,29 +332,54 @@ ipcMain.handle('open_folder_dialog', async () => {
   return result;
 });
 
-// IPC Handler - Check for app updates
-ipcMain.handle('check_for_updates', async () => {
-  return new Promise((resolve) => {
-    const req = https.get(UPDATE_URL, { timeout: 10000 }, (res) => {
-      let body = '';
-      res.on('data', (c) => body += c);
-      res.on('end', () => {
-        try {
-          const data = JSON.parse(body);
-          const hasUpdate = data.version && data.version !== appVersion;
-          resolve({
-            currentVersion: appVersion,
-            latestVersion: data.version || appVersion,
-            hasUpdate,
-            downloadUrl: data.url || '',
-            notes: data.notes || '',
-          });
-        } catch { resolve({ currentVersion: appVersion, latestVersion: appVersion, hasUpdate: false }); }
-      });
-    });
-    req.on('error', () => resolve({ currentVersion: appVersion, latestVersion: appVersion, hasUpdate: false }));
-    req.end();
+// Auto-updater
+function setupAutoUpdater() {
+  if (isDev) {
+    log('[AutoUpdater] Skipped in dev mode');
+    return;
+  }
+
+  autoUpdater.autoDownload = false;
+
+  autoUpdater.on('checking-for-update', () => log('[AutoUpdater] Checking...'));
+  autoUpdater.on('update-available', (info) => {
+    log('[AutoUpdater] Available:', info.version);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update_available', { version: info.version, url: '' });
+    }
   });
+  autoUpdater.on('update-not-available', () => log('[AutoUpdater] Up to date'));
+  autoUpdater.on('error', (err) => log('[AutoUpdater] Error:', err.message));
+  autoUpdater.on('download-progress', (progress) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update_download_progress', { percent: progress.percent, bytesPerSecond: progress.bytesPerSecond });
+    }
+  });
+  autoUpdater.on('update-downloaded', () => {
+    log('[AutoUpdater] Downloaded, installing...');
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update_downloaded');
+    }
+  });
+
+  autoUpdater.checkForUpdates();
+}
+
+ipcMain.handle('check_for_updates', () => {
+  if (isDev) return { currentVersion: appVersion, latestVersion: appVersion, hasUpdate: false };
+  return autoUpdater.checkForUpdates().then(info => ({
+    currentVersion: appVersion,
+    latestVersion: info?.updateInfo?.version || appVersion,
+    hasUpdate: !!info,
+  })).catch(() => ({ currentVersion: appVersion, latestVersion: appVersion, hasUpdate: false }));
+});
+
+ipcMain.handle('download_update', () => {
+  autoUpdater.downloadUpdate();
+});
+
+ipcMain.handle('install_update', () => {
+  autoUpdater.quitAndInstall();
 });
 
 // IPC Handler - Download & extract directly via XvdTool streaming
@@ -519,7 +544,10 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  setupAutoUpdater();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

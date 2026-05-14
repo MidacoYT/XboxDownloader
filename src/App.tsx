@@ -49,7 +49,7 @@ export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [loadingStatus, setLoadingStatus] = useState('Initialisation...');
-  const [updateInfo, setUpdateInfo] = useState<{ latestVersion: string; downloadUrl: string; notes: string } | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; downloading?: boolean; percent?: number } | null>(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -96,16 +96,17 @@ export default function App() {
     init();
   }, []);
 
-  // Check for updates at launch
+  // Auto-update events
   useEffect(() => {
-    (async () => {
-      try {
-        const result = await window.electronAPI?.checkForUpdates();
-        if (result?.hasUpdate) {
-          setUpdateInfo({ latestVersion: result.latestVersion, downloadUrl: result.downloadUrl || '', notes: result.notes || '' });
-        }
-      } catch {}
-    })();
+    window.electronAPI?.onUpdateAvailable(({ version }) => {
+      setUpdateInfo({ version });
+    });
+    window.electronAPI?.onUpdateProgress(({ percent }) => {
+      setUpdateInfo(prev => prev ? { ...prev, downloading: true, percent } : null);
+    });
+    window.electronAPI?.onUpdateDownloaded(() => {
+      window.electronAPI?.installUpdate();
+    });
   }, []);
 
   useEffect(() => {
@@ -669,26 +670,29 @@ export default function App() {
               display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
               animation: 'fadeInUp 0.3s ease',
             }}>
-              <div>
+              <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#a855f7' }}>
-                  Mise à jour disponible v{updateInfo.latestVersion}
+                  {updateInfo.downloading
+                    ? `Téléchargement de la mise à jour... ${updateInfo.percent ? Math.round(updateInfo.percent) + '%' : ''}`
+                    : `Mise à jour disponible v${updateInfo.version}`}
                 </div>
-                {updateInfo.notes && (
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{updateInfo.notes}</div>
+                {updateInfo.downloading && updateInfo.percent && (
+                  <div style={{ height: '4px', background: 'rgba(124,58,237,0.2)', borderRadius: '2px', marginTop: '6px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${updateInfo.percent}%`, background: 'linear-gradient(90deg, #7c3aed, #a855f7)', borderRadius: '2px', transition: 'width 0.3s ease' }} />
+                  </div>
                 )}
               </div>
-              {updateInfo.downloadUrl && (
-                <a href={updateInfo.downloadUrl} target="_blank" rel="noopener noreferrer"
+              {!updateInfo.downloading && (
+                <button
+                  onClick={() => window.electronAPI?.downloadUpdate()}
                   style={{
-                    padding: '7px 16px', borderRadius: '8px', flexShrink: 0,
-                    background: 'linear-gradient(135deg, #7c3aed, #6d28d9)', border: 'none',
+                    padding: '7px 16px', borderRadius: '8px', flexShrink: 0, border: 'none',
+                    background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
                     color: 'white', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
-                    textDecoration: 'none',
                   }}
-                  onClick={(e) => { e.stopPropagation(); }}
                 >
-                  Télécharger
-                </a>
+                  Mettre à jour
+                </button>
               )}
             </div>
           )}

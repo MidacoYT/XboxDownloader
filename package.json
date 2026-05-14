@@ -10,12 +10,14 @@
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:start": "npm run build && electron .",
     "electron:build": "vite build && electron-builder --win --x64",
+    "publish": "vite build && electron-builder --win --x64 --publish always",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@alepertu/metacritic-api": "^2.0.4",
     "clsx": "^2.1.1",
     "dashjs": "^5.1.1",
+    "electron-updater": "^6.8.3",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.14.0",
     "react": "^18.3.1",
@@ -44,6 +46,11 @@
       "dist/**/*",
       "electron/**/*"
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "MidacoYT",
+      "repo": "XboxDownloader"
+    },
     "win": {
       "target": [
         {
