@@ -23,15 +23,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Restore CIK files
-        if: env.CIK_ARCHIVE != ''
+      - name: Generate CIK bundle from secret
         run: |
           $b64 = "${{ secrets.CIK_ARCHIVE }}"
           if ($b64) {
             $bytes = [Convert]::FromBase64String($b64)
-            [IO.File]::WriteAllBytes("$env:TEMP\cik.zip", $bytes)
-            Expand-Archive -Path "$env:TEMP\cik.zip" -DestinationPath "Xvd\Cik" -Force
-            Write-Host "CIK files restored: $(@(Get-ChildItem Xvd\Cik).Length) files"
+            $zip = "$env:TEMP\cik.zip"
+            [IO.File]::WriteAllBytes($zip, $bytes)
+            Expand-Archive -Path $zip -DestinationPath "$env:TEMP\cik" -Force
+            $files = Get-ChildItem "$env:TEMP\cik\*.cik"
+            $sb = [System.Text.StringBuilder]::new()
+            [void]$sb.AppendLine("const CIK_FILES = {")
+            foreach ($f in $files) {
+              $data = [Convert]::ToBase64String([IO.File]::ReadAllBytes($f.FullName))
+              [void]$sb.AppendLine("  '$($f.Name)': '$data',")
+            }
+            [void]$sb.AppendLine("};")
+            [void]$sb.AppendLine("module.exports = { CIK_FILES };")
+            Set-Content -Path "electron\cik-bundle.js" -Value $sb.ToString()
+            Write-Host "Generated cik-bundle.js with $($files.Count) CIK files"
+          } else {
+            Write-Host "No CIK_ARCHIVE secret - creating empty bundle"
+            Set-Content -Path "electron\cik-bundle.js" -Value "module.exports = { CIK_FILES: {} };"
           }
 
       - name: Build installer
