@@ -331,91 +331,18 @@ ipcMain.handle('open_folder_dialog', async () => {
   return result;
 });
 
-// Auto-updater: download zip and replace app files
-const GITHUB_API = 'https://api.github.com/repos/MidacoYT/XboxDownloader/releases/latest';
-const tmpDir = path.join(app.getPath('temp'), 'xbox-updater');
-
-function checkForUpdates() {
-  return new Promise((resolve) => {
-    const req = https.get(GITHUB_API, { headers: { 'User-Agent': 'Xbox-Downloader/1.0', Accept: 'application/vnd.github.v3+json' }, timeout: 10000 }, (res) => {
-      let body = '';
-      res.on('data', (c) => body += c);
-      res.on('end', () => {
-        try {
-          const data = JSON.parse(body);
-          const latestVer = (data.tag_name || '').replace(/^v/, '');
-          const hasUpdate = latestVer && latestVer !== appVersion;
-          const zipAsset = data.assets?.find(a => a.name.endsWith('.zip'));
-          log('[Updater] Current:', appVersion, '| Latest:', latestVer, '| Has update:', hasUpdate);
-          resolve({ currentVersion: appVersion, latestVersion: latestVer, hasUpdate, downloadUrl: zipAsset?.browser_download_url || '' });
-        } catch (e) {
-          log('[Updater] Parse error:', e.message);
-          resolve({ currentVersion: appVersion, latestVersion: appVersion, hasUpdate: false });
-        }
-      });
+// IPC handler - simple version check (manual only)
+ipcMain.handle('check_for_updates', async () => {
+  try {
+    const data = await new Promise((resolve, reject) => {
+      https.get('https://api.github.com/repos/MidacoYT/XboxDownloader/releases/latest', { headers: { 'User-Agent': 'Xbox-Downloader/1.0' }, timeout: 5000 }, (res) => {
+        let b = ''; res.on('data', c => b += c); res.on('end', () => { try { resolve(JSON.parse(b)); } catch { reject(); } });
+      }).on('error', reject);
     });
-    req.on('error', (e) => {
-      log('[Updater] Request error:', e.message);
-      resolve({ currentVersion: appVersion, latestVersion: appVersion, hasUpdate: false });
-    });
-    req.end();
-  });
-}
-
-async function setupAutoUpdater() {
-  if (isDev) { log('[Updater] Skipped in dev mode'); return; }
-  log('[Updater] Checking for updates... (current:', appVersion + ')');
-  const info = await checkForUpdates();
-  if (!info.hasUpdate) { log('[Updater] No update'); return; }
-  log('[Updater] Update available:', info.latestVersion, '-> Downloading...');
-
-  // Download zip
-  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-  const zipPath = path.join(tmpDir, `update-${info.latestVersion}.zip`);
-  await downloadFile(info.downloadUrl, zipPath);
-  log('[Updater] Downloaded to:', zipPath);
-
-  // Create updater script
-  const appDir = path.dirname(app.getPath('exe'));
-  const batPath = path.join(tmpDir, 'update.bat');
-  const batContent = `@echo off
-title Updating Xbox Downloader...
-timeout /t 2 /nobreak >nul
-echo Extracting update...
-powershell -Command "Expand-Archive -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${appDir.replace(/'/g, "''")}' -Force"
-echo Done. Starting app...
-start "" "${path.join(appDir, 'Xbox Downloader.exe').replace(/'/g, "''")}"
-del "%~f0"
-`;
-  fs.writeFileSync(batPath, batContent);
-
-  // Send notification + download URL to renderer for info
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('update_available', { version: info.latestVersion });
-  }
-
-  // Run updater and quit
-  log('[Updater] Running updater script...');
-  const proc = spawn(batPath, [], { detached: true, stdio: 'ignore' });
-  proc.unref();
-  app.quit();
-}
-
-function downloadFile(url, dest) {
-  return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
-    https.get(url, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        file.close(); fs.unlinkSync(dest);
-        return downloadFile(res.headers.location, dest).then(resolve).catch(reject);
-      }
-      res.pipe(file);
-      file.on('finish', () => { file.close(); resolve(); });
-    }).on('error', (e) => { file.close(); fs.unlinkSync(dest); reject(e); });
-  });
-}
-
-ipcMain.handle('check_for_updates', checkForUpdates);
+    const latest = (data.tag_name || '').replace(/^v/, '');
+    return { currentVersion: appVersion, latestVersion: latest, hasUpdate: latest && latest !== appVersion };
+  } catch { return { currentVersion: appVersion, latestVersion: appVersion, hasUpdate: false }; }
+});
 
 // IPC Handler - Download & extract directly via XvdTool streaming
 ipcMain.handle('download_file', async (event, { url, downloadPath, gameId, gameName }) => {
@@ -579,10 +506,7 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
   });
 }
 
-app.whenReady().then(() => {
-  createWindow();
-  setupAutoUpdater();
-});
+app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

@@ -49,7 +49,6 @@ export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [loadingStatus, setLoadingStatus] = useState('Initialisation...');
-  const [updateInfo, setUpdateInfo] = useState<{ version: string } | null>(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -94,14 +93,6 @@ export default function App() {
     };
 
     init();
-  }, []);
-
-  // Auto-update events
-  useEffect(() => {
-    window.electronAPI?.onUpdateAvailable(({ version }) => {
-      setUpdateInfo({ version });
-      setTimeout(() => setUpdateInfo(null), 6000);
-    });
   }, []);
 
   useEffect(() => {
@@ -655,22 +646,6 @@ export default function App() {
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
             </div>
           </div>
-
-          {/* Update notification */}
-          {updateInfo && (
-            <div style={{
-              margin: '8px 12px 0', padding: '10px 16px', borderRadius: '10px',
-              background: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(168,85,247,0.06))',
-              border: '1px solid rgba(124,58,237,0.3)',
-              display: 'flex', alignItems: 'center', gap: '10px',
-              animation: 'fadeInUp 0.3s ease',
-            }}>
-              <Loader2 size={16} style={{ animation: 'spin 1s linear infinite', color: '#a855f7', flexShrink: 0 }} />
-              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#a855f7' }}>
-                Mise à jour v{updateInfo.version} téléchargée — installation...
-              </div>
-            </div>
-          )}
 
           {/* Page content */}
           <main style={{ flex: 1, padding: isMobile ? '16px' : '24px 28px', overflowY: 'auto' }}>
