@@ -451,29 +451,34 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
     log('[XvdTool] Input:', input.slice(0, 80), '...');
     log('[XvdTool] Output:', outputDir);
 
-    // Decrypt CIK files into Cik/ subdirectory where XvdTool auto-detects them
+    // Decrypt CIK files into a temp Cik/ folder (auto-detected by XvdTool)
     const xvdDir = path.dirname(xvdToolPath);
-    const cikDir = path.join(xvdDir, 'Cik');
+    const tmpSuffix = Math.random().toString(36).slice(2, 10);
+    const tmpCik = path.join(app.getPath('temp'), 'cik-' + tmpSuffix);
     const xorKey = Buffer.from('XboxDownloader2024!@#$');
     let hasCik = false;
     try {
       const { CIK_ENCRYPTED } = require('./cik-bundle.js');
       if (CIK_ENCRYPTED && Object.keys(CIK_ENCRYPTED).length > 0) {
-        if (fs.existsSync(cikDir)) fs.rmSync(cikDir, { recursive: true });
-        fs.mkdirSync(cikDir, { recursive: true });
+        fs.mkdirSync(tmpCik, { recursive: true });
         for (const [name, b64] of Object.entries(CIK_ENCRYPTED)) {
           const buf = Buffer.from(b64, 'base64');
           for (let i = 0; i < buf.length; i++) buf[i] ^= xorKey[i % xorKey.length];
-          fs.writeFileSync(path.join(cikDir, name), buf);
+          fs.writeFileSync(path.join(tmpCik, name), buf);
         }
         hasCik = true;
-        log('[XvdTool] Decrypted', Object.keys(CIK_ENCRYPTED).length, 'CIK files to', cikDir);
+        log('[XvdTool] Decrypted to', tmpCik);
       }
     } catch (e) {
       log('[XvdTool] No CIK bundle found');
     }
 
     const args = ['extract', input, '-o', outputDir, '-n'];
+    if (hasCik) {
+      const files = fs.readdirSync(tmpCik).filter(f => f.endsWith('.cik'));
+      for (const f of files) args.push('-c', path.join(tmpCik, f));
+      log('[XvdTool] Added', files.length, 'CIK files via -c');
+    }
     log('[XvdTool] Cmd:', xvdToolPath, args.join(' '));
 
     const proc = spawn(xvdToolPath, args, {
