@@ -10,11 +10,12 @@ interface LibraryPageProps {
   onUninstall: (game: Game) => void;
   onPlay: (game: Game) => void;
   onDetails: (game: Game) => void;
+  onOpenFolder?: (game: Game) => void;
   downloadingIds: Record<string, number>;
 }
 
 const LibraryPage: React.FC<LibraryPageProps> = ({
-  installedGames, onDownload, onUpdate, onUninstall, onPlay, onDetails, downloadingIds
+  installedGames, onDownload, onUpdate, onUninstall, onPlay, onDetails, onOpenFolder, downloadingIds
 }) => {
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState('title');
@@ -166,9 +167,10 @@ const LibraryPage: React.FC<LibraryPageProps> = ({
               onUpdate={onUpdate}
               onUninstall={onUninstall}
               onPlay={onPlay}
-              onDetails={onDetails}
-              downloading={game.id in downloadingIds}
-              progress={downloadingIds[game.id] || 0}
+               onDetails={onDetails}
+               onOpenFolder={onOpenFolder}
+               downloading={game.id in downloadingIds}
+               progress={downloadingIds[game.id] || 0}
             />
           ))}
         </div>

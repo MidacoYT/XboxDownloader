@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Download,
   Play,
@@ -14,6 +14,9 @@ import {
   Users,
   Shield,
   Gamepad2,
+  MoreVertical,
+  Folder,
+  ExternalLink,
 } from 'lucide-react';
 import { Game } from '../data/games';
 import { DownloadService } from '../services/downloadService';
@@ -26,6 +29,7 @@ interface GameCardProps {
   onUninstall: (game: Game) => void;
   onPlay: (game: Game) => void;
   onDetails: (game: Game) => void;
+  onOpenFolder?: (game: Game) => void;
   downloading?: boolean;
   progress?: number;
 }
@@ -37,6 +41,7 @@ const GameCard: React.FC<GameCardProps> = ({
   onUninstall,
   onPlay,
   onDetails,
+  onOpenFolder,
   downloading = false,
   progress = 0,
 }) => {
@@ -52,6 +57,16 @@ const GameCard: React.FC<GameCardProps> = ({
   };
   const [hovered, setHovered] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    if (menuOpen) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [menuOpen]);
 
   const genreColor = (genre: string) => {
     const colors: Record<string, string> = {
@@ -470,36 +485,56 @@ const GameCard: React.FC<GameCardProps> = ({
                     PLAY
                   </button>
                 )}
-                <button
-                  className="btn-secondary"
-                  onClick={() => onDetails(game)}
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: '8px',
-                    fontSize: '0.75rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Info size={13} />
-                </button>
-                <button
-                  className="btn-danger"
-                  onClick={() => onUninstall(game)}
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: '8px',
-                    fontSize: '0.75rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Trash2 size={13} />
-                </button>
+                <div ref={menuRef} style={{ position: 'relative' }}>
+                  <button
+                    className="btn-secondary"
+                    onClick={() => setMenuOpen(!menuOpen)}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: '8px',
+                      fontSize: '0.75rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <MoreVertical size={13} />
+                  </button>
+                  {menuOpen && (
+                    <div style={{
+                      position: 'absolute', right: 0, bottom: '100%', marginBottom: '4px',
+                      minWidth: '160px', padding: '4px',
+                      borderRadius: '10px',
+                      background: '#1a1a2e', border: '1px solid rgba(124,58,237,0.3)',
+                      boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                      zIndex: 100,
+                    }}>
+                      {[
+                        { icon: Info, label: 'Game Info', action: () => { onDetails(game); setMenuOpen(false); } },
+                        { icon: Folder, label: 'Game Location', action: () => { setMenuOpen(false); onOpenFolder?.(game); } },
+                        { icon: Trash2, label: 'Uninstall', color: '#f87171', action: () => { onUninstall(game); setMenuOpen(false); } },
+                      ].map((item, i) => (
+                        <button
+                          key={i}
+                          onClick={item.action}
+                          style={{
+                            width: '100%', display: 'flex', alignItems: 'center', gap: '8px',
+                            padding: '8px 10px', border: 'none', background: 'transparent',
+                            color: (item as any).color || 'var(--text-primary)',
+                            cursor: 'pointer', fontSize: '0.78rem', fontWeight: 500,
+                            borderRadius: '6px', transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(124,58,237,0.12)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          <item.icon size={13} />
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <>

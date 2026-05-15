@@ -32,6 +32,7 @@ interface ElectronAPI {
   onDownloadComplete: (callback: (data: { gameId: string; filePath?: string; success: boolean; state?: string }) => void) => void;
   onExtractProgress: (callback: (data: { gameId: string; status: 'extracting' | 'done' | 'error'; filePath: string; extractDir?: string; error?: string }) => void) => void;
   onConsoleLog: (callback: (msg: string) => void) => void;
+  openFolder: (folderPath: string) => void;
   windowMinimize: () => void;
   windowMaximize: () => void;
   windowClose: () => void;

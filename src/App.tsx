@@ -63,7 +63,7 @@ export default function App() {
           genre: game.genre || ['Action'],
           rating: game.rating || 4.5,
           size: game.size || '50 GB',
-          sizeGB: game.sizeGB || 50,
+          sizeGB: game.sizeGB || 0,
           releaseDate: game.releaseDate || new Date().toISOString().split('T')[0],
           description: game.description || 'Available on Xbox Game Pass',
           cover: game.cover || 'https://images.pexels.com/photos/3165335/pexels-photo-3165335.jpeg?auto=compress&cs=tinysrgb&w=400&h=600&fit=crop',
@@ -236,6 +236,14 @@ export default function App() {
     });
   }, []);
 
+  const handleOpenFolder = useCallback(async (game: Game) => {
+    try {
+      const settings = await SettingsService.getSettings();
+      const path = (settings.downloadPath || 'C:\\Xbox Games\\') + game.title.replace(/[<>:"/\\|?*]/g, '_').trim();
+      window.electronAPI?.openFolder(path);
+    } catch {}
+  }, []);
+
   const handleCancelDownload = useCallback((gameId: string) => {
     setDownloadingIds(prev => {
       const next = { ...prev };
@@ -275,9 +283,22 @@ export default function App() {
               onUpdate={handleUpdate}
               onUninstall={handleUninstall}
               onPlay={handlePlay}
-              onDetails={handleDetails}
-              downloadingIds={downloadingIds}
-            />
+            onDetails={handleDetails}
+            downloadingIds={downloadingIds}
+          />
+        );
+      case 'library':
+        return (
+          <LibraryPage
+            installedGames={installedGames}
+            onDownload={handleDownload}
+            onUpdate={handleUpdate}
+            onUninstall={handleUninstall}
+            onPlay={handlePlay}
+            onDetails={handleDetails}
+            onOpenFolder={handleOpenFolder}
+            downloadingIds={downloadingIds}
+          />
           </Suspense>
         );
       case 'library':

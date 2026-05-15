@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const https = require('https');
 const fs = require('fs');
@@ -570,6 +570,12 @@ ipcMain.handle('scan_installed_games', async () => {
     log('[Scan] Error:', e.message);
     return { downloadPath: 'C:\\Xbox Games', games: [] };
   }
+});
+
+// IPC - Open folder in Explorer
+ipcMain.handle('open_folder', async (event, folderPath) => {
+  if (!folderPath || typeof folderPath !== 'string') return;
+  try { await shell.openPath(folderPath); } catch {}
 });
 
 app.whenReady().then(createWindow);
