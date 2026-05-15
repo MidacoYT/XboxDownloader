@@ -5,8 +5,8 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 
 let mainWindow = null;
-const xvdToolPath = path.join(__dirname, '..', 'Xvd', 'XvdTool.Streaming.exe');
-const onlineFixDir = path.join(__dirname, '..', 'OnlineFix');
+const xvdToolPath = path.join(isDev ? path.dirname(__dirname) : process.resourcesPath, 'Xvd', 'XvdTool.Streaming.exe');
+const onlineFixDir = path.join(isDev ? path.dirname(__dirname) : process.resourcesPath, 'OnlineFix');
 const isDev = !app.isPackaged;
 const appVersion = require('../package.json').version;
 
