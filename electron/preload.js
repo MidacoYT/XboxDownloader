@@ -12,7 +12,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   openFolderDialog: () => ipcRenderer.invoke('open_folder_dialog'),
   checkForUpdates: () => ipcRenderer.invoke('check_for_updates'),
-  checkNow: () => ipcRenderer.invoke('check_now'),
   onUpdateAvailable: (callback) => ipcRenderer.on('update_available', (_e, d) => callback(d)),
   downloadFile: (url, downloadPath, gameId, gameName) => {
     if (typeof url !== 'string' || !url) return Promise.reject(new Error('Invalid URL'));

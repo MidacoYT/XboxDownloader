@@ -25,9 +25,8 @@ interface ElectronAPI {
   getGameDetails: (productId: string) => Promise<GameDetails | null>;
   getPackageInfo: (productId: string) => Promise<PackageInfo | null>;
   openFolderDialog: () => Promise<{ canceled: boolean; filePaths: string[] }>;
-  checkForUpdates: () => Promise<{ currentVersion: string; latestVersion: string; hasUpdate: boolean; downloadUrl?: string }>;
-  checkNow: () => Promise<{ currentVersion: string; latestVersion: string; hasUpdate: boolean; downloadUrl?: string }>;
-  onUpdateAvailable: (callback: (data: { version: string; url?: string }) => void) => void;
+  checkForUpdates: () => Promise<{ currentVersion: string; latestVersion: string; hasUpdate: boolean }>;
+  onUpdateAvailable: (callback: (data: { version: string }) => void) => void;
   downloadFile: (url: string, downloadPath: string, gameId: string, gameName?: string) => Promise<DownloadResult>;
   onDownloadProgress: (callback: (data: { gameId: string; receivedBytes: number; totalBytes: number; speed: number }) => void) => void;
   onDownloadComplete: (callback: (data: { gameId: string; filePath?: string; success: boolean; state?: string }) => void) => void;
