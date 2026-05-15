@@ -213,8 +213,13 @@ export default function App() {
     } catch {}
   }, []);
 
-  const handlePlay = useCallback((game: Game) => {
+  const handlePlay = useCallback(async (game: Game) => {
     setPlayingGame(game.id);
+    try {
+      const settings = await SettingsService.getSettings();
+      const folder = (settings.downloadPath || 'C:\\Xbox Games').replace(/\\+$/, '') + '\\' + game.title.replace(/[<>:"/\\|?*]/g, '_').trim();
+      await window.electronAPI?.launchGame(folder);
+    } catch {}
     setTimeout(() => setPlayingGame(null), 3000);
   }, []);
 
@@ -239,8 +244,8 @@ export default function App() {
   const handleOpenFolder = useCallback(async (game: Game) => {
     try {
       const settings = await SettingsService.getSettings();
-      const path = (settings.downloadPath || 'C:\\Xbox Games\\') + game.title.replace(/[<>:"/\\|?*]/g, '_').trim();
-      window.electronAPI?.openFolder(path);
+      const folder = (settings.downloadPath || 'C:\\Xbox Games').replace(/\\+$/, '') + '\\' + game.title.replace(/[<>:"/\\|?*]/g, '_').trim();
+      window.electronAPI?.openFolder(folder);
     } catch {}
   }, []);
 

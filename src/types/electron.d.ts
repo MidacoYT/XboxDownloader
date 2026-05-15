@@ -33,6 +33,7 @@ interface ElectronAPI {
   onExtractProgress: (callback: (data: { gameId: string; status: 'extracting' | 'done' | 'error'; filePath: string; extractDir?: string; error?: string }) => void) => void;
   onConsoleLog: (callback: (msg: string) => void) => void;
   openFolder: (folderPath: string) => void;
+  launchGame: (folderPath: string) => void;
   windowMinimize: () => void;
   windowMaximize: () => void;
   windowClose: () => void;

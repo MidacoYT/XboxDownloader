@@ -574,8 +574,22 @@ ipcMain.handle('scan_installed_games', async () => {
 
 // IPC - Open folder in Explorer
 ipcMain.handle('open_folder', async (event, folderPath) => {
-  if (!folderPath || typeof folderPath !== 'string') return;
+  if (!folderPath || typeof folderPath !== 'string' || !fs.existsSync(folderPath)) return;
   try { await shell.openPath(folderPath); } catch {}
+});
+
+// IPC - Launch game
+ipcMain.handle('launch_game', async (event, folderPath) => {
+  if (!folderPath || typeof folderPath !== 'string' || !fs.existsSync(folderPath)) return;
+  try {
+    // Try to find and launch the game executable
+    const files = fs.readdirSync(folderPath);
+    const exe = files.find(f => f.endsWith('.exe') && !f.includes('wdapp'));
+    if (exe) {
+      const proc = spawn(path.join(folderPath, exe), [], { cwd: folderPath, detached: true, stdio: 'ignore' });
+      proc.unref();
+    }
+  } catch {}
 });
 
 app.whenReady().then(createWindow);
