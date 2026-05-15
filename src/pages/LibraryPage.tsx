@@ -32,6 +32,7 @@ const LibraryPage: React.FC<LibraryPageProps> = ({
     });
 
   const totalSize = installedGames.reduce((acc, g) => acc + g.sizeGB, 0);
+  const formatSize = (gb: number) => gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(gb * 1024)} MB`;
   const updatesCount = installedGames.filter(g => g.hasUpdate).length;
 
   return (
@@ -56,7 +57,7 @@ const LibraryPage: React.FC<LibraryPageProps> = ({
           </button>
         </h1>
         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-          {installedGames.length} game{installedGames.length !== 1 ? 's' : ''} installed — {totalSize.toFixed(1)} GB used
+          {installedGames.length} game{installedGames.length !== 1 ? 's' : ''} installed — {formatSize(totalSize)} used
         </p>
       </div>
 
@@ -69,7 +70,7 @@ const LibraryPage: React.FC<LibraryPageProps> = ({
         {[
           { label: 'Installed Games', value: installedGames.length, icon: '🎮', color: '#7c3aed' },
           { label: 'Updates', value: updatesCount, icon: '🔄', color: '#3b82f6' },
-          { label: 'Space Used', value: `${totalSize.toFixed(0)} GB`, icon: '💾', color: '#22c55e' },
+          { label: 'Space Used', value: formatSize(totalSize), icon: '💾', color: '#22c55e' },
         ].map((s, i) => (
           <div
             key={i}
