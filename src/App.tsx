@@ -79,7 +79,8 @@ export default function App() {
 
         // Scan for installed games on disk
         try {
-          const scan = await window.electronAPI?.scanInstalledGames();
+          const s = await SettingsService.getSettings();
+          const scan = await window.electronAPI?.scanInstalledGames(s.downloadPath || 'C:\\Xbox Games\\');
           if (scan?.games?.length) {
             setGameList(prev => prev.map(g => ({
               ...g,
@@ -251,7 +252,8 @@ export default function App() {
 
   const handleRefreshLibrary = useCallback(async () => {
     try {
-      const scan = await window.electronAPI?.scanInstalledGames();
+      const settings = await SettingsService.getSettings();
+      const scan = await window.electronAPI?.scanInstalledGames(settings.downloadPath || 'C:\\Xbox Games\\');
       if (scan?.games?.length) {
         setGameList(prev => prev.map(g => ({
           ...g,

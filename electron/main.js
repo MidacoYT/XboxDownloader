@@ -556,19 +556,16 @@ ipcMain.handle('uninstall_game', async (event, { gameId, folderPath }) => {
 });
 
 // IPC - Scan for installed games in download path
-ipcMain.handle('scan_installed_games', async () => {
+ipcMain.handle('scan_installed_games', async (event, downloadPath) => {
+  downloadPath = downloadPath || 'C:\\Xbox Games';
   try {
-    const settingsPath = path.join(app.getPath('userData'), 'settings.json');
-    let downloadPath = 'C:\\Xbox Games';
-    try { const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); if (s.downloadPath) downloadPath = s.downloadPath; } catch {}
     if (!fs.existsSync(downloadPath)) return { downloadPath, games: [] };
-
     const folders = fs.readdirSync(downloadPath, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
     log('[Scan] Found folders:', folders.length);
     return { downloadPath, games: folders };
   } catch (e) {
     log('[Scan] Error:', e.message);
-    return { downloadPath: 'C:\\Xbox Games', games: [] };
+    return { downloadPath, games: [] };
   }
 });
 
