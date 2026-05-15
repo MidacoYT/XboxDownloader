@@ -249,6 +249,18 @@ export default function App() {
     } catch {}
   }, []);
 
+  const handleRefreshLibrary = useCallback(async () => {
+    try {
+      const scan = await window.electronAPI?.scanInstalledGames();
+      if (scan?.games?.length) {
+        setGameList(prev => prev.map(g => ({
+          ...g,
+          installed: scan.games.some(f => f.toLowerCase() === g.title.toLowerCase() || f === g.id),
+        })));
+      }
+    } catch {}
+  }, []);
+
   const handleCancelDownload = useCallback((gameId: string) => {
     setDownloadingIds(prev => {
       const next = { ...prev };
@@ -302,6 +314,7 @@ export default function App() {
             onPlay={handlePlay}
             onDetails={handleDetails}
             onOpenFolder={handleOpenFolder}
+            onRefresh={handleRefreshLibrary}
             downloadingIds={downloadingIds}
           />
           </Suspense>

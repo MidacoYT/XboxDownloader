@@ -11,11 +11,12 @@ interface LibraryPageProps {
   onPlay: (game: Game) => void;
   onDetails: (game: Game) => void;
   onOpenFolder?: (game: Game) => void;
+  onRefresh?: () => Promise<void>;
   downloadingIds: Record<string, number>;
 }
 
 const LibraryPage: React.FC<LibraryPageProps> = ({
-  installedGames, onDownload, onUpdate, onUninstall, onPlay, onDetails, onOpenFolder, downloadingIds
+  installedGames, onDownload, onUpdate, onUninstall, onPlay, onDetails, onOpenFolder, onRefresh, downloadingIds
 }) => {
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState('title');
@@ -40,6 +41,19 @@ const LibraryPage: React.FC<LibraryPageProps> = ({
         <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Gamepad2 size={24} style={{ color: '#a855f7' }} />
           My Library
+          <button
+            onClick={onRefresh}
+            title="Scan for installed games"
+            style={{
+              marginLeft: 'auto', padding: '6px 10px', borderRadius: '8px',
+              border: '1px solid var(--border-color)', background: 'var(--glass-bg)',
+              color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.75rem',
+              display: 'flex', alignItems: 'center', gap: '5px',
+            }}
+          >
+            <RefreshCw size={13} />
+            Scan
+          </button>
         </h1>
         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
           {installedGames.length} game{installedGames.length !== 1 ? 's' : ''} installed — {totalSize.toFixed(1)} GB used
