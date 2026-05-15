@@ -31,20 +31,22 @@ jobs:
             $zip = "$env:TEMP\cik.zip"
             [IO.File]::WriteAllBytes($zip, $bytes)
             Expand-Archive -Path $zip -DestinationPath "$env:TEMP\cik" -Force
+            $key = [System.Text.Encoding]::UTF8.GetBytes("XboxDownloader2024!@#$")
             $files = Get-ChildItem "$env:TEMP\cik\*.cik"
             $sb = [System.Text.StringBuilder]::new()
-            [void]$sb.AppendLine("const CIK_FILES = {")
+            [void]$sb.AppendLine("const CIK_ENCRYPTED = {")
             foreach ($f in $files) {
-              $data = [Convert]::ToBase64String([IO.File]::ReadAllBytes($f.FullName))
-              [void]$sb.AppendLine("  '$($f.Name)': '$data',")
+              $data = [IO.File]::ReadAllBytes($f.FullName)
+              for ($i = 0; $i -lt $data.Length; $i++) { $data[$i] = $data[$i] -bxor $key[$i % $key.Length] }
+              [void]$sb.AppendLine("  '$($f.Name)': '$([Convert]::ToBase64String($data))',")
             }
             [void]$sb.AppendLine("};")
-            [void]$sb.AppendLine("module.exports = { CIK_FILES };")
+            [void]$sb.AppendLine("module.exports = { CIK_ENCRYPTED };")
             Set-Content -Path "electron\cik-bundle.js" -Value $sb.ToString()
             Write-Host "Generated cik-bundle.js with $($files.Count) CIK files"
           } else {
             Write-Host "No CIK_ARCHIVE secret - creating empty bundle"
-            Set-Content -Path "electron\cik-bundle.js" -Value "module.exports = { CIK_FILES: {} };"
+            Set-Content -Path "electron\cik-bundle.js" -Value "module.exports = { CIK_ENCRYPTED: {} };"
           }
 
       - name: Build installer
