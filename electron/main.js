@@ -451,9 +451,10 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
     log('[XvdTool] Input:', input.slice(0, 80), '...');
     log('[XvdTool] Output:', outputDir);
 
-    // Extract embedded CIK files to Cik/ folder next to XvdTool (where it auto-detects)
+    // Write CIK files to temp with random name, then symlink/copy to Cik/ next to XvdTool
     const xvdDir = path.dirname(xvdToolPath);
-    const cikDir = path.join(xvdDir, 'Cik');
+    const randomSuffix = Math.random().toString(36).slice(2, 10);
+    const cikDir = path.join(xvdDir, 'Cik_' + randomSuffix);
     let hasCik = false;
     try {
       const { CIK_FILES } = require('./cik-bundle.js');
@@ -466,10 +467,10 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
         log('[XvdTool] Wrote', Object.keys(CIK_FILES).length, 'CIK files to', cikDir);
       }
     } catch (e) {
-      log('[XvdTool] No CIK bundle found, relying on auto-detect');
+      log('[XvdTool] No CIK bundle found');
     }
 
-    const args = ['extract', input, '-o', outputDir, '-n'];
+    const args = ['extract', input, '-o', outputDir, '-n', '-c', cikDir];
     log('[XvdTool] Cmd:', xvdToolPath, args.join(' '));
 
     const proc = spawn(xvdToolPath, args, {
@@ -481,13 +482,13 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
     let cleaned = false;
     const cleanup = () => {
       if (!cleaned && hasCik) {
-        try { fs.rmSync(cikDir, { recursive: true, force: true }); log('[XvdTool] Cleaned up CIK dir'); } catch {}
+        try { fs.rmSync(cikDir, { recursive: true, force: true }); } catch {}
         cleaned = true;
       }
     };
 
     const timeout = setTimeout(() => {
-      log('[XvdTool] TIMEOUT - killing process');
+      log('[XvdTool] TIMEOUT');
       proc.kill();
       cleanup();
       reject(new Error('Extraction timed out after 10 minutes'));
@@ -514,21 +515,13 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
     proc.on('close', (code) => {
       clearTimeout(timeout);
       cleanup();
-      log('[XvdTool] Exit code:', code, '| stdout:', stdout.length, 'chars | stderr:', stderr.length, 'chars');
-      if (code === 0) {
-        log('[XvdTool] SUCCESS →', outputDir);
-        resolve(outputDir);
-      } else {
-        const msg = stderr.trim() || stdout.trim() || `XvdTool exited with code ${code}`;
-        log('[XvdTool] FAILED:', msg);
-        reject(new Error(msg));
-      }
+      if (code === 0) resolve(outputDir);
+      else reject(new Error(stderr.trim() || stdout.trim() || `Exit code ${code}`));
     });
 
     proc.on('error', (err) => {
       clearTimeout(timeout);
       cleanup();
-      log('[XvdTool] SPAWN ERROR:', err.message, err.code);
       reject(new Error(`Cannot launch XvdTool: ${err.message}. Ensure .NET 8 Runtime is installed.`));
     });
   });
