@@ -245,7 +245,8 @@ export default function App() {
   const handleOpenFolder = useCallback(async (game: Game) => {
     try {
       const settings = await SettingsService.getSettings();
-      const folder = (settings.downloadPath || 'C:\\Xbox Games').replace(/\\+$/, '') + '\\' + game.title.replace(/[<>:"/\\|?*]/g, '_').trim();
+      const base = (settings.downloadPath || 'C:\\Xbox Games').replace(/\\+$/, '');
+      const folder = base + '\\' + game.title.replace(/[<>:"/\\|?*]/g, '_').trim();
       window.electronAPI?.openFolder(folder);
     } catch {}
   }, []);

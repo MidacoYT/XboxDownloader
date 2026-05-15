@@ -205,7 +205,7 @@ class XboxApiService {
     genre: xboxGame.genres || [],
     rating: xboxGame.EAPlay ? 4.5 : 4,
     size: xboxGame.size || '50 GB',
-    sizeGB: typeof xboxGame.size === 'number' ? xboxGame.size : 50,
+    sizeGB: typeof xboxGame.size === 'number' && xboxGame.size > 0 ? xboxGame.size : 0,
     releaseDate: xboxGame.releaseDate || xboxGame.dateAdded || '',
     description: xboxGame.productDescription || xboxGame.description || '',
     shortDescription: xboxGame.shortDescription || '',

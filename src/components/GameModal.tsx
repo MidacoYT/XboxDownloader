@@ -973,7 +973,7 @@ const GameModal: React.FC<GameModalProps> = ({
                 </button>
 
                 <button
-                  style={styles.btnUninstall}
+                  style={{...styles.btnUninstall, display: 'flex', alignItems: 'center', gap: '6px'}}
                   onClick={() => onUninstall(game)}
                   onMouseEnter={(e) => {
                     (e.target as HTMLButtonElement).style.background = 'rgba(239,68,68,.3)';
@@ -983,6 +983,7 @@ const GameModal: React.FC<GameModalProps> = ({
                   }}
                 >
                   <Trash2 size={16} />
+                  Uninstall
                 </button>
               </>
             )}

@@ -571,7 +571,8 @@ ipcMain.handle('scan_installed_games', async (event, downloadPath) => {
 
 // IPC - Open folder in Explorer
 ipcMain.handle('open_folder', async (event, folderPath) => {
-  if (!folderPath || typeof folderPath !== 'string' || !fs.existsSync(folderPath)) return;
+  if (!folderPath || typeof folderPath !== 'string') return;
+  if (!fs.existsSync(folderPath)) { log('[open_folder] Not found:', folderPath); return; }
   try { await shell.openPath(folderPath); } catch {}
 });
 
