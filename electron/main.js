@@ -506,6 +506,57 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
   });
 }
 
+// IPC - Uninstall game
+ipcMain.handle('uninstall_game', async (event, { gameId, folderPath }) => {
+  log('[Uninstall] gameId:', gameId, 'folder:', folderPath);
+  if (!folderPath || !fs.existsSync(folderPath)) return { success: false, error: 'Game folder not found' };
+
+  // Try to unregister with wdapp
+  const manifest = path.join(folderPath, 'appxmanifest.xml');
+  const wdapp = path.join(folderPath, 'wdapp.exe');
+  if (fs.existsSync(manifest) && fs.existsSync(wdapp)) {
+    try {
+      await new Promise((resolve, reject) => {
+        const proc = spawn(wdapp, ['unregister', manifest], { stdio: 'pipe', cwd: folderPath });
+        let err = '';
+        proc.stderr.on('data', (c) => err += c.toString());
+        proc.on('close', (code) => code === 0 ? resolve() : reject(new Error(err.trim() || `exit ${code}`)));
+        proc.on('error', reject);
+      });
+      log('[Uninstall] Unregistered successfully');
+    } catch (e) {
+      log('[Uninstall] Unregister failed (continuing):', e.message);
+    }
+  }
+
+  // Delete folder
+  try {
+    fs.rmSync(folderPath, { recursive: true, force: true });
+    log('[Uninstall] Deleted folder:', folderPath);
+    return { success: true };
+  } catch (e) {
+    log('[Uninstall] Delete failed:', e.message);
+    return { success: false, error: e.message };
+  }
+});
+
+// IPC - Scan for installed games in download path
+ipcMain.handle('scan_installed_games', async () => {
+  try {
+    const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+    let downloadPath = 'C:\\Xbox Games';
+    try { const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); if (s.downloadPath) downloadPath = s.downloadPath; } catch {}
+    if (!fs.existsSync(downloadPath)) return { downloadPath, games: [] };
+
+    const folders = fs.readdirSync(downloadPath, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
+    log('[Scan] Found folders:', folders.length);
+    return { downloadPath, games: folders };
+  } catch (e) {
+    log('[Scan] Error:', e.message);
+    return { downloadPath: 'C:\\Xbox Games', games: [] };
+  }
+});
+
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {

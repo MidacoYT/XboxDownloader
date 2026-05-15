@@ -86,6 +86,17 @@ export default function App() {
           downloadProgress: 0,
         }));
         setGameList(transformedGames);
+
+        // Scan for installed games on disk
+        try {
+          const scan = await window.electronAPI?.scanInstalledGames();
+          if (scan?.games?.length) {
+            setGameList(prev => prev.map(g => ({
+              ...g,
+              installed: scan.games.some(f => f.toLowerCase() === g.title.toLowerCase() || f === g.id),
+            })));
+          }
+        } catch {}
       } catch {}
 
       setLoadingStatus('Prêt !');
@@ -197,13 +208,19 @@ export default function App() {
     setTimeout(() => setUpdatingAll(false), 3000);
   }, [gameList, downloadingIds]);
 
-  const handleUninstall = useCallback((game: Game) => {
+  const handleUninstall = useCallback(async (game: Game) => {
     setGameList(prev =>
       prev.map(g =>
         g.id === game.id ? { ...g, installed: false, downloadProgress: 0 } : g
       )
     );
     setCompletedDownloads(prev => prev.filter(id => id !== game.id));
+    try {
+      const settings = await SettingsService.getSettings();
+      const downloadPath = settings.downloadPath || 'C:\\Xbox Games\\';
+      const folderName = game.title.replace(/[<>:"/\\|?*]/g, '_').trim();
+      await window.electronAPI?.uninstallGame(game.id, downloadPath + folderName);
+    } catch {}
   }, []);
 
   const handlePlay = useCallback((game: Game) => {

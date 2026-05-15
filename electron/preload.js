@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onConsoleLog: (callback) => {
     ipcRenderer.on('console_log', (_event, msg) => callback(msg));
   },
+  uninstallGame: (gameId, folderPath) => ipcRenderer.invoke('uninstall_game', { gameId, folderPath }),
+  scanInstalledGames: () => ipcRenderer.invoke('scan_installed_games'),
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
   windowClose: () => ipcRenderer.invoke('window-close'),
