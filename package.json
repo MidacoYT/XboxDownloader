@@ -1,6 +1,6 @@
 {
   "name": "xbox-downloader",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Xbox Launcher for PC",
   "author": "MidacoYT",
   "main": "electron/main.js",
