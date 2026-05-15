@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const https = require('https');
 const fs = require('fs');
@@ -8,7 +8,6 @@ let mainWindow = null;
 const isDev = !app.isPackaged;
 const xvdToolPath = path.join(isDev ? path.dirname(__dirname) : process.resourcesPath, 'Xvd', 'XvdTool.Streaming.exe');
 const onlineFixDir = path.join(isDev ? path.dirname(__dirname) : process.resourcesPath, 'OnlineFix');
-const appVersion = require('../package.json').version;
 
 function log(...args) {
   const msg = args.join(' ');
@@ -331,19 +330,6 @@ ipcMain.handle('open_folder_dialog', async () => {
   return result;
 });
 
-// IPC handler - simple version check (manual only)
-ipcMain.handle('check_for_updates', async () => {
-  try {
-    const data = await new Promise((resolve, reject) => {
-      https.get('https://api.github.com/repos/MidacoYT/XboxDownloader/releases/latest', { headers: { 'User-Agent': 'Xbox-Downloader/1.0' }, timeout: 5000 }, (res) => {
-        let b = ''; res.on('data', c => b += c); res.on('end', () => { try { resolve(JSON.parse(b)); } catch { reject(); } });
-      }).on('error', reject);
-    });
-    const latest = (data.tag_name || '').replace(/^v/, '');
-    return { currentVersion: appVersion, latestVersion: latest, hasUpdate: latest && latest !== appVersion };
-  } catch { return { currentVersion: appVersion, latestVersion: appVersion, hasUpdate: false }; }
-});
-
 // IPC Handler - Download & extract directly via XvdTool streaming
 ipcMain.handle('download_file', async (event, { url, downloadPath, gameId, gameName }) => {
   log('[download_file] START gameId:', gameId, '| name:', gameName, '| path:', downloadPath);
@@ -490,7 +476,7 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
     let cleaned = false;
     const cleanup = () => {
       if (!cleaned && hasCik) {
-        try { fs.rmSync(cikDir, { recursive: true, force: true }); } catch {}
+        try { fs.rmSync(tmpCik, { recursive: true, force: true }); } catch {}
         cleaned = true;
       }
     };

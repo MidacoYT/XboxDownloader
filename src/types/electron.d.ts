@@ -25,7 +25,6 @@ interface ElectronAPI {
   getGameDetails: (productId: string) => Promise<GameDetails | null>;
   getPackageInfo: (productId: string) => Promise<PackageInfo | null>;
   openFolderDialog: () => Promise<{ canceled: boolean; filePaths: string[] }>;
-  checkForUpdates: () => Promise<{ currentVersion: string; latestVersion: string; hasUpdate: boolean }>;
   uninstallGame: (gameId: string, folderPath: string) => Promise<{ success: boolean; error?: string }>;
   scanInstalledGames: () => Promise<{ downloadPath: string; games: string[] }>;
   downloadFile: (url: string, downloadPath: string, gameId: string, gameName?: string) => Promise<DownloadResult>;
@@ -33,7 +32,6 @@ interface ElectronAPI {
   onDownloadComplete: (callback: (data: { gameId: string; filePath?: string; success: boolean; state?: string }) => void) => void;
   onExtractProgress: (callback: (data: { gameId: string; status: 'extracting' | 'done' | 'error'; filePath: string; extractDir?: string; error?: string }) => void) => void;
   onConsoleLog: (callback: (msg: string) => void) => void;
-  extractMsixvc: (filePath: string, outputDir: string) => Promise<{ success: boolean; extractDir?: string; error?: string }>;
   windowMinimize: () => void;
   windowMaximize: () => void;
   windowClose: () => void;

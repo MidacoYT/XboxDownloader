@@ -11,7 +11,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('get_package_info', productId);
   },
   openFolderDialog: () => ipcRenderer.invoke('open_folder_dialog'),
-  checkForUpdates: () => ipcRenderer.invoke('check_for_updates'),
   downloadFile: (url, downloadPath, gameId, gameName) => {
     if (typeof url !== 'string' || !url) return Promise.reject(new Error('Invalid URL'));
     if (typeof downloadPath !== 'string' || !downloadPath) return Promise.reject(new Error('Invalid download path'));
@@ -26,11 +25,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onExtractProgress: (callback) => {
     ipcRenderer.on('extract_progress', (_event, data) => callback(data));
-  },
-  extractMsixvc: (filePath, outputDir) => {
-    if (typeof filePath !== 'string' || !filePath) return Promise.reject(new Error('Invalid file path'));
-    if (typeof outputDir !== 'string' || !outputDir) return Promise.reject(new Error('Invalid output directory'));
-    return ipcRenderer.invoke('extract_msixvc', { filePath, outputDir });
   },
   onConsoleLog: (callback) => {
     ipcRenderer.on('console_log', (_event, msg) => callback(msg));

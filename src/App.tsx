@@ -1,14 +1,5 @@
 import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
-import {
-  Home,
-  Store,
-  Gamepad2,
-  Download,
-  RefreshCw,
-  Settings as SettingsIcon,
-  X,
-  Play,
-  } from 'lucide-react';
+import { Home, Store, Gamepad2, Download, RefreshCw, Settings as SettingsIcon, Play } from 'lucide-react';
 import { Game } from './data/games';
 import { xboxApi } from './services/xboxApi';
 import HomePage from './pages/HomePage';
@@ -18,7 +9,6 @@ import DownloadsPage from './pages/DownloadsPage';
 import UpdatesPage from './pages/UpdatesPage';
 import SettingsPage from './pages/SettingsPage';
 import GameModal from './components/GameModal';
-import ToggleSwitch from './components/ToggleSwitch';
 import TitleBar from './components/TitleBar';
 import AppLogo from './components/AppLogo';
 import { SettingsService } from './services/settingsService';
