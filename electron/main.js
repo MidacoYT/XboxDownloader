@@ -451,34 +451,40 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
     log('[XvdTool] Input:', input.slice(0, 80), '...');
     log('[XvdTool] Output:', outputDir);
 
-    // Extract embedded CIK files to temp
-    let cikDir = null;
+    // Extract embedded CIK files to Cik/ folder next to XvdTool (where it auto-detects)
+    const xvdDir = path.dirname(xvdToolPath);
+    const cikDir = path.join(xvdDir, 'Cik');
+    let hasCik = false;
     try {
       const { CIK_FILES } = require('./cik-bundle.js');
       if (CIK_FILES && Object.keys(CIK_FILES).length > 0) {
-        cikDir = path.join(app.getPath('temp'), 'xbox-cik-' + Date.now());
         fs.mkdirSync(cikDir, { recursive: true });
         for (const [name, b64] of Object.entries(CIK_FILES)) {
           fs.writeFileSync(path.join(cikDir, name), Buffer.from(b64, 'base64'));
         }
-        log('[XvdTool] Extracted', Object.keys(CIK_FILES).length, 'CIK files to', cikDir);
+        hasCik = true;
+        log('[XvdTool] Wrote', Object.keys(CIK_FILES).length, 'CIK files to', cikDir);
       }
     } catch (e) {
       log('[XvdTool] No CIK bundle found, relying on auto-detect');
     }
 
     const args = ['extract', input, '-o', outputDir, '-n'];
-    if (cikDir) args.push('-c', cikDir);
     log('[XvdTool] Cmd:', xvdToolPath, args.join(' '));
 
     const proc = spawn(xvdToolPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      cwd: path.dirname(xvdToolPath),
+      cwd: xvdDir,
     });
     let stderr = '';
     let stdout = '';
     let cleaned = false;
-    const cleanup = () => { if (!cleaned && cikDir) { try { fs.rmSync(cikDir, { recursive: true, force: true }); } catch {} cleaned = true; } };
+    const cleanup = () => {
+      if (!cleaned && hasCik) {
+        try { fs.rmSync(cikDir, { recursive: true, force: true }); log('[XvdTool] Cleaned up CIK dir'); } catch {}
+        cleaned = true;
+      }
+    };
 
     const timeout = setTimeout(() => {
       log('[XvdTool] TIMEOUT - killing process');
