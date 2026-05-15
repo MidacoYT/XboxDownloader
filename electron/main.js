@@ -448,10 +448,27 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
       log('[XvdTool] NOT FOUND at:', xvdToolPath);
       return reject(new Error(`XvdTool not found at ${xvdToolPath}`));
     }
-    log('[XvdTool] Found. Input starts with:', input.slice(0, 80), '...');
+    log('[XvdTool] Input:', input.slice(0, 80), '...');
     log('[XvdTool] Output:', outputDir);
 
+    // Extract embedded CIK files to temp
+    let cikDir = null;
+    try {
+      const { CIK_FILES } = require('./cik-bundle.js');
+      if (CIK_FILES && Object.keys(CIK_FILES).length > 0) {
+        cikDir = path.join(app.getPath('temp'), 'xbox-cik-' + Date.now());
+        fs.mkdirSync(cikDir, { recursive: true });
+        for (const [name, b64] of Object.entries(CIK_FILES)) {
+          fs.writeFileSync(path.join(cikDir, name), Buffer.from(b64, 'base64'));
+        }
+        log('[XvdTool] Extracted', Object.keys(CIK_FILES).length, 'CIK files to', cikDir);
+      }
+    } catch (e) {
+      log('[XvdTool] No CIK bundle found, relying on auto-detect');
+    }
+
     const args = ['extract', input, '-o', outputDir, '-n'];
+    if (cikDir) args.push('-c', cikDir);
     log('[XvdTool] Cmd:', xvdToolPath, args.join(' '));
 
     const proc = spawn(xvdToolPath, args, {
@@ -460,10 +477,13 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
     });
     let stderr = '';
     let stdout = '';
+    let cleaned = false;
+    const cleanup = () => { if (!cleaned && cikDir) { try { fs.rmSync(cikDir, { recursive: true, force: true }); } catch {} cleaned = true; } };
 
     const timeout = setTimeout(() => {
       log('[XvdTool] TIMEOUT - killing process');
       proc.kill();
+      cleanup();
       reject(new Error('Extraction timed out after 10 minutes'));
     }, 600000);
 
@@ -487,6 +507,7 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
 
     proc.on('close', (code) => {
       clearTimeout(timeout);
+      cleanup();
       log('[XvdTool] Exit code:', code, '| stdout:', stdout.length, 'chars | stderr:', stderr.length, 'chars');
       if (code === 0) {
         log('[XvdTool] SUCCESS →', outputDir);
@@ -500,6 +521,7 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
 
     proc.on('error', (err) => {
       clearTimeout(timeout);
+      cleanup();
       log('[XvdTool] SPAWN ERROR:', err.message, err.code);
       reject(new Error(`Cannot launch XvdTool: ${err.message}. Ensure .NET 8 Runtime is installed.`));
     });

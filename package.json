@@ -50,7 +50,8 @@
     "extraResources": [
       {
         "from": "Xvd",
-        "to": "Xvd"
+        "to": "Xvd",
+        "filter": ["**/*", "!Cik/**"]
       },
       {
         "from": "OnlineFix",
