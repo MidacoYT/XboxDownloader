@@ -23,7 +23,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build & publish
-        run: npm run publish
+      - name: Build installer
+        run: npx vite build && npx electron-builder --win --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release (published, not draft)
+        run: |
+          $ver = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = "v$ver"
+          gh release create $tag --title $tag --notes "" release\*.exe release\*.yml release\*.blockmap
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
