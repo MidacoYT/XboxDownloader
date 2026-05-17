@@ -64,11 +64,9 @@ const GameCard: React.FC<GameCardProps> = ({
 
   const handleDownloadConfirm = async (installPath: string) => {
     setShowDownloadDialog(false);
+    onDownload(game);
     try {
-      const result = await DownloadService.downloadGame(game.id, 0, game.title, installPath);
-      if (result.success) {
-        onDownload(game);
-      }
+      await DownloadService.downloadGame(game.id, 0, game.title, installPath);
     } catch (error) {
       console.error('[GameCard] Download failed:', error);
     }

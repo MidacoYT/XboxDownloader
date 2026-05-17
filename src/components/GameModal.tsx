@@ -471,10 +471,12 @@ const GameModal: React.FC<GameModalProps> = ({
 
   const handleDownloadConfirm = async (installPath: string) => {
     setShowDownloadDialog(false);
-    const result = await DownloadService.downloadGame(game.id, 0, game.title, installPath);
-    if (result.success) {
-      setDownloadStarted(true);
-      onDownload(game);
+    setDownloadStarted(true);
+    onDownload(game);
+    try {
+      await DownloadService.downloadGame(game.id, 0, game.title, installPath);
+    } catch (error) {
+      console.error('[GameModal] Download failed:', error);
     }
   };
 
