@@ -587,8 +587,8 @@ function runExtraction(url, extractDir, gameId, gameSize) {
           }
 
           // Speed = (latest.bytes - earliest.bytes) / (latest.time - earliest.time) in bytes/s
-          let speed = lastKnownSpeed; // Cache previous if not enough samples
-          if (speedSamples.length >= 2 && gameSize > 0) {
+          let speed = lastKnownSpeed;
+          if (speedSamples.length >= 2) {
             const first = speedSamples[0];
             const last = speedSamples[speedSamples.length - 1];
             const deltaBytes = last.bytes - first.bytes;
@@ -702,9 +702,9 @@ function extractMsixvc(input, outputDir, onProgress = () => {}, cikPath) {
       stdout += text;
       const trimmed = text.trim();
       if (trimmed) log('[XvdTool]', trimmed);
-      // Progress from main region only — ignore small secondary regions
-      const mainMatch = trimmed.match(/Extracting region 0x00000002: (\d{1,3})%/);
-      if (mainMatch) onProgress(parseInt(mainMatch[1], 10));
+      // Progress from main region only — match any hex region, ignore small metadata (0x40000003)
+      const mainMatch = trimmed.match(/Extracting region (?:0x[0-9a-fA-F]+): (\d{1,3})%/);
+      if (mainMatch && !trimmed.includes('0x40000003')) onProgress(parseInt(mainMatch[1], 10));
     });
 
     proc.stderr.on('data', (chunk) => {
@@ -712,8 +712,8 @@ function extractMsixvc(input, outputDir, onProgress = () => {}, cikPath) {
       stderr += text;
       const trimmed = text.trim();
       if (trimmed) log('[XvdTool]', trimmed);
-      const mainMatch = trimmed.match(/Extracting region 0x00000002: (\d{1,3})%/);
-      if (mainMatch) onProgress(parseInt(mainMatch[1], 10));
+      const mainMatch = trimmed.match(/Extracting region (?:0x[0-9a-fA-F]+): (\d{1,3})%/);
+      if (mainMatch && !trimmed.includes('0x40000003')) onProgress(parseInt(mainMatch[1], 10));
     });
 
     proc.on('close', (code) => {

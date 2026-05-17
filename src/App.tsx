@@ -145,11 +145,16 @@ export default function App() {
         return { ...prev, [gameId]: Math.min(pct, 99) };
       });
       if (speed > 0) setDownloadSpeeds(prev => ({ ...prev, [gameId]: speed }));
+      setDownloadProgressMap(prev => ({ ...prev, [gameId]: { receivedBytes, totalBytes, speed } }));
     });
     window.electronAPI?.onExtractProgress(({ gameId, status, error }) => {
       if (status === 'extracting') {
-        // Keep in downloadingIds so progress/updates keep flowing (XvdTool streams + extracts simultaneously)
         setExtractingIds(prev => ({ ...prev, [gameId]: 'extracting' }));
+        // Ensure game is in downloadingIds (in case onDownload's setState hasn't committed yet)
+        setDownloadingIds(prev => {
+          if (gameId in prev) return prev;
+          return { ...prev, [gameId]: 0 };
+        });
       } else if (status === 'done') {
         setDownloadingIds(prev => { const n = { ...prev }; delete n[gameId]; return n; });
         setExtractingIds(prev => { const n = { ...prev }; delete n[gameId]; return n; });
@@ -351,6 +356,7 @@ export default function App() {
             onCancelDownload={handleCancelDownload}
             completedDownloads={completedDownloads}
             downloadProgressMap={downloadProgressMap}
+            downloadSpeeds={downloadSpeeds}
             extractingIds={extractingIds}
             extractErrors={extractErrors}
           />

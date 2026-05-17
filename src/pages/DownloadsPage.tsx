@@ -13,6 +13,7 @@ interface DownloadsPageProps {
   onCancelDownload: (gameId: string) => void;
   completedDownloads: string[];
   downloadProgressMap?: Record<string, { receivedBytes: number; totalBytes: number; speed: number }>;
+  downloadSpeeds?: Record<string, number>;
   extractingIds?: Record<string, string>;
   extractErrors?: Record<string, string>;
 }
@@ -81,6 +82,7 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
   onCancelDownload,
   completedDownloads,
   downloadProgressMap = {},
+  downloadSpeeds = {},
   extractingIds = {},
   extractErrors = {},
 }) => {
@@ -233,9 +235,12 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                         </span>
                         {extractingIds[game.id] === 'extracting' && game.id in downloadingIds && (
                           <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {downloadProgressMap[game.id]?.speed > 0 && (
-                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{formatSpeed(downloadProgressMap[game.id].speed)}</span>
-                            )}
+                            {(() => {
+                              const spd = downloadProgressMap[game.id]?.speed || downloadSpeeds[game.id] || 0;
+                              return spd > 0 ? (
+                                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{formatSpeed(spd)}</span>
+                              ) : null;
+                            })()}
                             <span>{Math.round(progress)}%</span>
                           </span>
                         )}
