@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Download, X, CheckCircle, Clock, HardDrive, Loader2, Zap, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 import { Game } from '../data/games';
 
@@ -74,6 +74,30 @@ const formatEta = (remainingBytes: number, speed: number): string => {
   if (seconds < 60) return `~${Math.ceil(seconds)}s`;
   if (seconds < 3600) return `~${Math.floor(seconds / 60)}m ${Math.ceil(seconds % 60)}s`;
   return `~${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+};
+
+// Smoothly animates toward a target value using requestAnimationFrame (like Spectre.Console's smooth rendering)
+const SmoothValue: React.FC<{ target: number; children: (value: number) => React.ReactNode }> = ({ target, children }) => {
+  const [displayed, setDisplayed] = useState(target);
+  const targetRef = useRef(target);
+  const rafRef = useRef<number>();
+  targetRef.current = target;
+
+  useEffect(() => {
+    const animate = () => {
+      setDisplayed(prev => {
+        const t = targetRef.current;
+        if (Math.abs(prev - t) < 0.05) return t;
+        // Lerp 15% of the way per frame (~60fps, reaches 95% in ~20 frames = 330ms)
+        return prev + (t - prev) * 0.15;
+      });
+      rafRef.current = requestAnimationFrame(animate);
+    };
+    rafRef.current = requestAnimationFrame(animate);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, []);
+
+  return <>{children(displayed)}</>;
 };
 
 const DownloadsPage: React.FC<DownloadsPageProps> = ({
@@ -241,7 +265,18 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                                 <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{formatSpeed(spd)}</span>
                               ) : null;
                             })()}
-                            <span>{Math.round(progress)}%</span>
+                            <SmoothValue target={progress}>{v => <>{Math.round(v)}%</>}</SmoothValue>
+                          </span>
+                        )}
+                        {!extractingIds[game.id] && game.id in downloadingIds && (
+                          <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {(() => {
+                              const spd = downloadProgressMap[game.id]?.speed || downloadSpeeds[game.id] || 0;
+                              return spd > 0 ? (
+                                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{formatSpeed(spd)}</span>
+                              ) : null;
+                            })()}
+                            <SmoothValue target={progress}>{v => <>{Math.round(v)}%</>}</SmoothValue>
                           </span>
                         )}
                       </div>
