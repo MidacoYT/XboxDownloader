@@ -52,7 +52,7 @@ const SpeedSlider: React.FC<SpeedSliderProps> = ({
         marginBottom: '12px',
         fontWeight: 500
       }}>
-        Vitesse de téléchargement maximale
+        Max download speed
       </label>
 
       <div
@@ -108,7 +108,7 @@ const SpeedSlider: React.FC<SpeedSliderProps> = ({
         alignItems: 'center',
       }}>
         <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-          {value === 0 ? 'Illimité' : `${value} MB/s`}
+          {value === 0 ? 'Unlimited' : `${value} MB/s`}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <input

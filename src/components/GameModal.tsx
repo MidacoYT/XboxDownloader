@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Download,
@@ -17,10 +17,12 @@ import {
   PlayCircle,
   ChevronLeft,
   ChevronRight,
+  Layers,
 } from 'lucide-react';
 import { Game } from '../data/games';
 import { DownloadService } from '../services/downloadService';
 import MPDPlayer from './MPDPlayer';
+import DownloadDialog from './DownloadDialog';
 
 // Styles constants
 const styles = {
@@ -334,19 +336,6 @@ const styles = {
     fontWeight: 700,
     textAlign: 'center' as const,
   },
-  giPlatformRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '6px',
-  },
-  dotGreen: {
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
-    background: '#10b981',
-    flexShrink: 0,
-  },
   eaBadge: {
     width: '28px',
     height: '28px',
@@ -447,6 +436,7 @@ const GameModal: React.FC<GameModalProps> = ({
   const [showMPDPlayer, setShowMPDPlayer] = useState(false);
   const [selectedTrailerUrl, setSelectedTrailerUrl] = useState<string>('');
   const [downloadStarted, setDownloadStarted] = useState(false);
+  const [showDownloadDialog, setShowDownloadDialog] = useState(false);
 
   if (!game) return null;
 
@@ -469,13 +459,27 @@ const GameModal: React.FC<GameModalProps> = ({
     setCurrentTrailerIndex((prev) => (prev + 1) % trailers.length);
   };
 
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
+
   const handleDownloadModal = async () => {
     if (downloadStarted) return;
-    const result = await DownloadService.downloadGame(game.id, 0, game.title);
+    setShowDownloadDialog(true);
+  };
+
+  const handleDownloadConfirm = async (installPath: string) => {
+    setShowDownloadDialog(false);
+    const result = await DownloadService.downloadGame(game.id, 0, game.title, installPath);
     if (result.success) {
       setDownloadStarted(true);
       onDownload(game);
     }
+  };
+
+  const handleDownloadCancel = () => {
+    setShowDownloadDialog(false);
   };
 
   const currentScreenshot = screenshots[currentScreenshotIndex];
@@ -531,7 +535,7 @@ const GameModal: React.FC<GameModalProps> = ({
               {(() => {
                 const count = game.ratingCount;
                 if (!count || count === 0) return 'New game';
-                return count.toLocaleString() + ' avis';
+                return count.toLocaleString() + ' reviews';
               })()}
             </div>
             <div style={styles.stat}>
@@ -636,22 +640,8 @@ const GameModal: React.FC<GameModalProps> = ({
                 Categories
               </h3>
               <div style={styles.tagsWrap}>
-                {game.categories.map((category, i) => (
-                  <span key={i} style={styles.tag}>{category}</span>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* Tags */}
-          {game.tags && game.tags.length > 0 && (
-            <>
-              <h3 style={styles.sectionTitle}>
-                Tags
-              </h3>
-              <div style={styles.tagsWrap}>
-                {game.tags.map((tag, i) => (
-                  <span key={i} style={styles.tag}>{tag}</span>
+                {game.categories.map((item, i) => (
+                  <span key={i} style={styles.tag}>{item}</span>
                 ))}
               </div>
             </>
@@ -867,42 +857,82 @@ const GameModal: React.FC<GameModalProps> = ({
               </div>
             )}
 
-            {/* Platforms */}
-            <div style={styles.giCard}>
-              <div style={styles.giCardHeader}>
-                <Shield size={24} color="#10b981" />
-                <div>
-                  <div style={styles.giCardTitle}>Platforms</div>
-                  <div style={styles.giCardSub}>Availability</div>
+            {/* Categories */}
+            {game.categories && game.categories.length > 0 && (
+              <div style={styles.giCard}>
+                <div style={styles.giCardHeader}>
+                  <Layers size={24} color="#06b6d4" />
+                  <div>
+                    <div style={styles.giCardTitle}>Categories</div>
+                    <div style={styles.giCardSub}>Store categories</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                  {game.categories.map((c, i) => (
+                    <span key={i} style={{ ...styles.tag, fontSize: '.75rem' }}>{c}</span>
+                  ))}
                 </div>
               </div>
-              <div>
-                {game.platforms?.one && (
-                  <div style={styles.giPlatformRow}>
-                    <div style={styles.dotGreen} />
-                    <span style={{ fontSize: '.9rem', color: '#e5e7eb' }}>Xbox One</span>
+            )}
+
+            {/* Features (Attributes) */}
+            {game.attributes && game.attributes.length > 0 && (
+              <div style={styles.giCard}>
+                <div style={styles.giCardHeader}>
+                  <Shield size={24} color="#10b981" />
+                  <div>
+                    <div style={styles.giCardTitle}>Features</div>
+                    <div style={styles.giCardSub}>Capabilities &amp; compatibility</div>
                   </div>
-                )}
-                {game.platforms?.series && (
-                  <div style={styles.giPlatformRow}>
-                    <div style={styles.dotGreen} />
-                    <span style={{ fontSize: '.9rem', color: '#e5e7eb' }}>Xbox Series X|S</span>
-                  </div>
-                )}
-                {game.platforms?.windows && (
-                  <div style={styles.giPlatformRow}>
-                    <div style={styles.dotGreen} />
-                    <span style={{ fontSize: '.9rem', color: '#e5e7eb' }}>Windows PC</span>
-                  </div>
-                )}
-                {game.platforms?.cloud && (
-                  <div style={styles.giPlatformRow}>
-                    <div style={styles.dotGreen} />
-                    <span style={{ fontSize: '.9rem', color: '#e5e7eb' }}>Cloud Gaming</span>
-                  </div>
-                )}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {(() => {
+                    const attrNames = game.attributes.map(a => a.name);
+                    const sections = [
+                      { label: '🎮 Multiplayer', names: ['SinglePlayer', 'XblOnlineCoop', 'XblOnlineMultiPlayer', 'XblCrossPlatformCoop', 'XblCrossPlatformMultiPlayer', 'XboxLiveCrossGenMP'] },
+                      { label: '🖥️ Graphics', names: ['Capability4k', 'CapabilityHDR', 'CapabilityXboxEnhanced', 'ConsoleGen9Optimized'] },
+                      { label: '💻 Compatibility', names: ['ConsoleCrossGen', 'PcGamePad', 'XPA'] },
+                      { label: '🏆 Xbox Live', names: ['XboxLive', 'XblAchievements', 'XblPresence', 'XblCloudSaves', 'BroadcastSupport'] },
+                    ];
+                    const attrLabels: Record<string, string> = {
+                      SinglePlayer: 'Solo mode',
+                      XblOnlineCoop: 'Online co-op (2-4)',
+                      XblOnlineMultiPlayer: 'Online multiplayer (2-4)',
+                      XblCrossPlatformCoop: 'Cross-platform co-op',
+                      XblCrossPlatformMultiPlayer: 'Cross-platform multiplayer',
+                      XboxLiveCrossGenMP: 'Cross-gen multiplayer',
+                      Capability4k: '4K resolution',
+                      CapabilityHDR: 'HDR support',
+                      CapabilityXboxEnhanced: 'Xbox enhanced',
+                      ConsoleGen9Optimized: 'Optimized for Series X|S',
+                      ConsoleCrossGen: 'Cross-gen compatible',
+                      PcGamePad: 'Gamepad on PC',
+                      XPA: 'Xbox Play Anywhere',
+                      XboxLive: 'Xbox Live',
+                      XblAchievements: 'Achievements',
+                      XblPresence: 'Presence',
+                      XblCloudSaves: 'Cloud saves',
+                      BroadcastSupport: 'Broadcast support',
+                    };
+                    return sections.map(section => {
+                      const matched = section.names.filter(n => attrNames.includes(n));
+                      if (!matched.length) return null;
+                      return (
+                        <div key={section.label}>
+                          <div style={{ fontSize: '.75rem', fontWeight: 600, color: '#a855f7', marginBottom: '4px' }}>{section.label}</div>
+                          {matched.map(name => (
+                            <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0' }}>
+                              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />
+                              <span style={{ fontSize: '.8rem', color: '#e5e7eb' }}>{attrLabels[name] || name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* EA Play */}
             {game.EAPlay && (
@@ -925,7 +955,16 @@ const GameModal: React.FC<GameModalProps> = ({
         {/* Action Bar */}
         <div style={styles.actionBar}>
           <div style={styles.actionRow}>
-            {!game.installed ? (
+            {game.state === 'unavailable' ? (
+              <div
+                style={{
+                  ...styles.btn, ...styles.btnDownload,
+                  opacity: 0.5, cursor: 'default', pointerEvents: 'none',
+                }}
+              >
+                Unavailable
+              </div>
+            ) : !game.installed ? (
               <button
                 style={{...styles.btn, ...styles.btnDownload}}
                 onClick={handleDownloadModal}
@@ -1000,7 +1039,7 @@ const GameModal: React.FC<GameModalProps> = ({
                 }}
               >
                 <RefreshCw size={16} />
-                Mettre à jour
+                Update
               </button>
             )}
           </div>
@@ -1016,6 +1055,16 @@ const GameModal: React.FC<GameModalProps> = ({
           setSelectedTrailerUrl('');
         }}
       />
+
+      {/* Download Folder Dialog */}
+      {showDownloadDialog && (
+        <DownloadDialog
+          gameId={game.id}
+          gameName={game.title}
+          onConfirm={handleDownloadConfirm}
+          onCancel={handleDownloadCancel}
+        />
+      )}
     </div>
   );
 };

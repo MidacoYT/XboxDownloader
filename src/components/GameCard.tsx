@@ -21,6 +21,7 @@ import {
 import { Game } from '../data/games';
 import { DownloadService } from '../services/downloadService';
 import { scoreCache } from '../services/rawgApi';
+import DownloadDialog from './DownloadDialog';
 
 interface GameCardProps {
   game: Game;
@@ -45,9 +46,16 @@ const GameCard: React.FC<GameCardProps> = ({
   downloading = false,
   progress = 0,
 }) => {
+  const [showDownloadDialog, setShowDownloadDialog] = useState(false);
+
   const handleDownload = async () => {
+    setShowDownloadDialog(true);
+  };
+
+  const handleDownloadConfirm = async (installPath: string) => {
+    setShowDownloadDialog(false);
     try {
-      const result = await DownloadService.downloadGame(game.id, 0, game.title);
+      const result = await DownloadService.downloadGame(game.id, 0, game.title, installPath);
       if (result.success) {
         onDownload(game);
       }
@@ -55,6 +63,11 @@ const GameCard: React.FC<GameCardProps> = ({
       console.error('[GameCard] Download failed:', error);
     }
   };
+
+  const handleDownloadCancel = () => {
+    setShowDownloadDialog(false);
+  };
+
   const [hovered, setHovered] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -87,6 +100,7 @@ const GameCard: React.FC<GameCardProps> = ({
   const primaryGenre = game.genre[0];
 
   return (
+    <>
     <div
       className="game-card"
       onMouseEnter={() => setHovered(true)}
@@ -440,7 +454,22 @@ const GameCard: React.FC<GameCardProps> = ({
               marginTop: 'auto',
             }}
           >
-            {game.installed ? (
+            {game.state === 'unavailable' ? (
+              <div
+                style={{
+                  flex: 1,
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  fontSize: '0.75rem',
+                  textAlign: 'center',
+                  background: 'rgba(255,255,255,0.05)',
+                  color: 'var(--text-muted)',
+                  cursor: 'default',
+                }}
+              >
+                Unavailable
+              </div>
+            ) : game.installed ? (
               <>
                 {game.hasUpdate ? (
                   <button
@@ -577,6 +606,16 @@ const GameCard: React.FC<GameCardProps> = ({
         )}
       </div>
     </div>
+
+      {showDownloadDialog && (
+        <DownloadDialog
+          gameId={game.id}
+          gameName={game.title}
+          onConfirm={handleDownloadConfirm}
+          onCancel={handleDownloadCancel}
+        />
+      )}
+    </>
   );
 };
 

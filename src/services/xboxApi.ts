@@ -40,6 +40,9 @@ export interface XboxGame {
   language?: string;
   markets?: string[];
   searchTitles?: XboxSearchTitle[];
+  categories?: string[];
+  category?: string;
+  attributes?: Array<{ name: string; min?: number; max?: number }>;
 }
 
 export interface XboxTrailer {
@@ -97,6 +100,10 @@ export interface XboxGamePassData {
   dateAdded?: string;
 }
 
+const HARDCODED_STATES: Record<string, string> = {
+  '9NGLST31DG26': 'unavailable',
+};
+
 class XboxApiService {
   private readonly catalogUrl = 'https://catalog.gamepass.com/sigls/v2';
   private readonly detailsUrl = 'https://displaycatalog.mp.microsoft.com/v7.0/products';
@@ -135,7 +142,7 @@ class XboxApiService {
     } catch {}
   }
 
-  async getGamePassGames(): Promise<{ id: string }[]> {
+  async getGamePassGames(): Promise<{ id: string; state?: string }[]> {
     try {
       if (!window.electronAPI?.getGamePassGames) {
         return [];
@@ -205,7 +212,7 @@ class XboxApiService {
     genre: xboxGame.genres || [],
     rating: xboxGame.EAPlay ? 4.5 : 4,
     size: xboxGame.size || '? GB',
-    sizeGB: typeof xboxGame.size === 'number' && xboxGame.size > 0 ? xboxGame.size : 0,
+    sizeGB: xboxGame.size ? parseFloat(xboxGame.size.replace(/[^0-9.]/g, '')) || 0 : 0,
     releaseDate: xboxGame.releaseDate || xboxGame.dateAdded || '',
     description: xboxGame.productDescription || xboxGame.description || '',
     shortDescription: xboxGame.shortDescription || '',
@@ -215,11 +222,18 @@ class XboxApiService {
     screenshots: xboxGame.screenshots || [],
     trailers: xboxGame.trailers || [],
     heroTrailer: xboxGame.heroTrailer || undefined,
-    tags: xboxGame.searchTitles?.map(st => st.searchString) || [],
+    tags: [...new Set([
+      ...(xboxGame.genres || []),
+      ...(xboxGame.categories || []),
+      ...(xboxGame.searchTitles?.map(st => st.searchString) || [])
+    ])],
     players: xboxGame.players || '1',
     ageRating: xboxGame.rating || 'PEGI 12',
     achievements: xboxGame.achievements || 0,
     gamerscore: xboxGame.gamerscore || 0,
+    categories: xboxGame.categories || [],
+    category: xboxGame.category || '',
+    attributes: xboxGame.attributes || [],
     platforms: xboxGame.platforms || { one: false, series: false, windows: false, cloud: false },
     EAPlay: xboxGame.EAPlay || false,
     contentRatings: xboxGame.contentRatings || [],
@@ -242,7 +256,10 @@ class XboxApiService {
   async getGamePassGamesFull(): Promise<Game[]> {
     const cached = this.getCachedGames();
     if (cached && cached.length > 0) {
-      return cached;
+      return cached.map(g => {
+        if (HARDCODED_STATES[g.id]) g.state = HARDCODED_STATES[g.id];
+        return g;
+      });
     }
 
     try {
@@ -257,9 +274,22 @@ class XboxApiService {
         return [];
       }
 
+      // Build state map (productId → state) — API response first, then hardcoded
+      const stateMap: Record<string, string> = {};
+      for (const g of gameIds) {
+        if (g.state) stateMap[g.id] = g.state;
+      }
+      for (const [id, state] of Object.entries(HARDCODED_STATES)) {
+        stateMap[id] = state;
+      }
+
       const finalGames = xboxGames
         .filter(game => game?.id)
-        .map(this.transformXboxGameToGame);
+        .map(g => {
+          const game = this.transformXboxGameToGame(g);
+          if (stateMap[game.id]) game.state = stateMap[game.id];
+          return game;
+        });
 
       this.setCachedGames(finalGames);
       return finalGames;
@@ -291,8 +321,7 @@ class XboxApiService {
   }
 }
 
-export const xboxApi = new XboxApiService();
-
+export   const xboxApi = new XboxApiService();
 // Get all games from API (combines catalog IDs + details)
 export async function getGamePassGamesFull(): Promise<Game[]> {
   return xboxApi.getGamePassGamesFull();

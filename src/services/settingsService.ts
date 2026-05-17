@@ -19,7 +19,7 @@ export class SettingsService {
         language: 'en',
         theme: 'dark',
         autoDownload: true,
-        downloadSpeed: 10, // 10 MB/s
+        downloadSpeed: 10,
         maxConcurrentDownloads: 3,
       };
     } catch (error) {

@@ -32,8 +32,6 @@ interface StorePageProps {
   downloadingIds: Record<string, number>;
 }
 
-const allGenres = ['All', 'FPS', 'RPG', 'Racing', 'Strategy', 'Simulation', 'Action', 'Adventure', 'Roguelike', 'Sandbox', 'JRPG'];
-
 const StorePage: React.FC<StorePageProps> = ({
   games, onDownload, onUpdate, onUninstall, onPlay, onDetails, downloadingIds
 }) => {
@@ -41,6 +39,10 @@ const StorePage: React.FC<StorePageProps> = ({
   const [sortBy, setSortBy] = useState('title');
   const [selectedGenre, setSelectedGenre] = useState('All');
   const [showInstalled, setShowInstalled] = useState<'all' | 'installed' | 'available'>('all');
+
+  const allGenres = ['All', ...new Set(
+    games.flatMap(g => [...(g.categories || []), ...(g.genre || [])])
+  )].filter(Boolean).sort((a, b) => a.localeCompare(b));
 
   useEffect(() => {
     if (storeTimer) clearTimeout(storeTimer);
@@ -56,9 +58,15 @@ const StorePage: React.FC<StorePageProps> = ({
   };
 
   const filtered = games.filter(game => {
-    const matchSearch = game.title.toLowerCase().includes(localSearch.toLowerCase()) ||
-      (game.developer?.toLowerCase().includes(localSearch.toLowerCase()) ?? false);
-    const matchGenre = selectedGenre === 'All' || game.genre?.some(g => g.toLowerCase().includes(selectedGenre.toLowerCase()));
+    const q = localSearch.toLowerCase();
+    const matchSearch = !q ||
+      game.title.toLowerCase().includes(q) ||
+      (game.developer?.toLowerCase().includes(q) ?? false) ||
+      (game.categories?.some(c => c.toLowerCase().includes(q)) ?? false) ||
+      (game.genre?.some(g => g.toLowerCase().includes(q)) ?? false);
+    const matchGenre = selectedGenre === 'All' ||
+      game.categories?.some(c => c.toLowerCase().includes(selectedGenre.toLowerCase())) ||
+      game.genre?.some(g => g.toLowerCase().includes(selectedGenre.toLowerCase()));
     const matchInstalled = showInstalled === 'all' ||
       (showInstalled === 'installed' && game.installed) ||
       (showInstalled === 'available' && !game.installed);

@@ -220,9 +220,9 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                         <span style={{ fontSize: '0.72rem', color: extractingIds[game.id] === 'error' ? '#f87171' : '#a855f7', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                           {extractingIds[game.id] === 'extracting' ? (
-                            <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Téléchargement en cours...</>
+                            <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Extracting...</>
                           ) : extractingIds[game.id] === 'error' ? (
-                            <><span style={{ width: '11px', height: '11px', borderRadius: '50%', background: '#f87171', display: 'inline-block' }} /> Téléchargement échoué</>
+                            <><span style={{ width: '11px', height: '11px', borderRadius: '50%', background: '#f87171', display: 'inline-block' }} /> Download failed</>
                           ) : (
                             <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Downloading in progress</>
                           )}

@@ -141,7 +141,7 @@ const HomePage: React.FC<HomePageProps> = ({
                     position: 'absolute', top: '8px', left: '8px', padding: '2px 6px', borderRadius: '4px',
                     background: 'rgba(0,0,0,0.75)', fontSize: '0.6rem', color: 'var(--text-secondary)',
                   }}>
-                    {e.ratingsCount.toLocaleString()} avis
+                    {e.ratingsCount.toLocaleString()} reviews
                   </div>
                 ) : null}
               </div>

@@ -47,6 +47,7 @@ export interface Game {
   ratingCount?: number;
   installed?: boolean;
   downloadProgress?: number;
+  state?: string;
   version?: string;
   latestVersion?: string;
   achievements?: number;
@@ -77,6 +78,7 @@ export interface Game {
   interactive3DEnabled?: boolean;
   language?: string;
   markets?: string[];
+  attributes?: Array<{ name: string; min?: number; max?: number }>;
   usageData?: Array<{
     aggregateTimeSpan: string;
     averageRating: number;

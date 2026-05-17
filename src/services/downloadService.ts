@@ -73,7 +73,7 @@ export class DownloadService {
     }
   }
 
-  static async downloadGame(productId: string, platform: number = 0, gameName?: string): Promise<DownloadResponse> {
+  static async downloadGame(productId: string, platform: number = 0, gameName?: string, customPath?: string): Promise<DownloadResponse> {
     if (!PRODUCT_ID_REGEX.test(productId)) {
       return { success: false, message: 'Invalid product ID format' };
     }
@@ -89,14 +89,13 @@ export class DownloadService {
         return { success: false, message: response.message || 'Failed to get download URL' };
       }
 
-      const settings = await SettingsService.getSettings();
-      const downloadPath = settings.downloadPath || 'C:\\Xbox Games\\';
+      const downloadPath = customPath || (await SettingsService.getSettings()).downloadPath || 'C:\\Xbox Games\\';
 
       const result = await window.electronAPI.downloadFile(response.downloadUrl, downloadPath, productId, gameName);
 
       return {
         success: result.success,
-        message: result.success ? 'Extraction en cours...' : 'Download failed',
+        message: result.success ? 'Extracting...' : 'Download failed',
         downloadUrl: response.downloadUrl,
         size: response.size,
         extractDir: result.extractDir,

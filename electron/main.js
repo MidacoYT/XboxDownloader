@@ -9,6 +9,10 @@ const isDev = !app.isPackaged;
 const xvdToolPath = path.join(isDev ? path.dirname(__dirname) : process.resourcesPath, 'Xvd', 'XvdTool.Streaming.exe');
 const onlineFixDir = path.join(isDev ? path.dirname(__dirname) : process.resourcesPath, 'OnlineFix');
 
+// CIK API configuration
+const CIK_API_URL = 'https://xboxapi.netlify.app';
+const CIK_API_KEY = '9eEo0ksYvZTsXgPiJUz7hQCio18hW+mPlQhy0UBq+10=';
+
 function log(...args) {
   const msg = args.join(' ');
   console.log(msg);
@@ -69,53 +73,54 @@ ipcMain.handle('window-is-maximized', () => {
 // IPC Handler - Get Game Pass games
 ipcMain.handle('get_gamepass_games', async () => {
   try {
-    const options = {
-      hostname: 'raw.githubusercontent.com',
-      path: '/MidacoYT/Games/refs/heads/main/games.json',
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Xbox-Downloader/1.0'
-      },
-    };
+    // Try Netlify API first if configured, fall back to GitHub
+    const urls = CIK_API_URL
+      ? [`${CIK_API_URL.replace(/\/+$/, '')}/games`]
+      : ['https://raw.githubusercontent.com/MidacoYT/Games/refs/heads/main/games.json'];
 
-    return new Promise((resolve) => {
-      const req = https.request(options, (res) => {
-        let body = '';
-        res.on('data', (chunk) => body += chunk);
-        res.on('end', () => {
-          try {
-            const data = JSON.parse(body);
-            let gameIds = [];
-            if (Array.isArray(data)) {
-              const seen = new Set();
-              gameIds = data
-                .filter(item => item.productId && item.productId.trim() !== '')
-                .filter(item => {
-                  if (seen.has(item.productId)) return false;
-                  seen.add(item.productId);
-                  return true;
-                })
-                .map((item) => ({
-                  id: item.productId,
-                  name: item.name || 'Unknown Game'
-                }));
-            } else if (data.Products && Array.isArray(data.Products)) {
-              gameIds = data.Products.map((p) => ({ id: p.ProductId }));
-            } else if (data.items && Array.isArray(data.items)) {
-              gameIds = data.items.filter(item => item.productId).map((p) => ({ id: p.productId }));
-            }
-            resolve(gameIds);
-          } catch (error) {
-            console.error('[Games] JSON parse error:', error instanceof SyntaxError ? error.message : error);
-            resolve([]);
-          }
+    for (const url of urls) {
+      try {
+        const body = await new Promise((resolve, reject) => {
+          const opts = CIK_API_KEY ? { headers: { 'Authorization': `Bearer ${CIK_API_KEY}` } } : {};
+          https.get(url, opts, (res) => {
+            let d = '';
+            res.on('data', (c) => d += c);
+            res.on('end', () => resolve(d));
+          }).on('error', reject);
         });
-      });
-      req.on('error', () => resolve([]));
-      req.end();
-    });
+
+        const data = JSON.parse(body);
+        let gameIds = [];
+
+        if (Array.isArray(data)) {
+          const seen = new Set();
+          gameIds = data
+            .filter(item => item.productId && item.productId.trim() !== '')
+            .filter(item => {
+              if (seen.has(item.productId)) return false;
+              seen.add(item.productId);
+              return true;
+            })
+            .map((item) => ({ id: item.productId, name: item.name || 'Unknown Game', state: item.state }));
+        } else if (data.Products && Array.isArray(data.Products)) {
+          gameIds = data.Products.map((p) => ({ id: p.ProductId, state: p.state }));
+        } else if (data.items && Array.isArray(data.items)) {
+          gameIds = data.items.filter(item => item.productId).map((p) => ({ id: p.productId }));
+        } else if (typeof data === 'object') {
+          // Object with numeric keys: { "0": { productId, name, state? }, "1": {...} }
+          gameIds = Object.values(data)
+            .filter(item => item && item.productId)
+            .map((item) => ({ id: item.productId, name: item.name || 'Unknown Game', state: item.state }));
+        }
+
+        if (gameIds.length > 0) return gameIds;
+      } catch (e) {
+        console.error('[Games] Error fetching from', url, e.message);
+      }
+    }
+    return [];
   } catch (error) {
+    log('[Games] Error fetching games');
     return [];
   }
 });
@@ -164,14 +169,21 @@ ipcMain.handle('get_game_details', async (event, gameId) => {
               const availabilityProperties = firstAvailability.Properties || {};
               const originalReleaseDate = availabilityProperties.OriginalReleaseDate || '';
               const minimumUserAge = firstMarketProperty.MinimumUserAge || 0;
-              const category = localized.Category || '';
-              const categories = localized.Categories || [];
+              const category = product.Properties?.Category || localized.Category || '';
+              const categories = product.Properties?.Categories || localized.Categories || [];
               const productAttributes = product.Properties?.Attributes || [];
               const players = productAttributes.length > 0 ?
                 `${productAttributes.find(attr => attr.Name === "XblOnlineCoop")?.Minimum || 1}-${productAttributes.find(attr => attr.Name === "XblOnlineCoop")?.Maximum || 4} players` :
                 '1 player';
+              const attributes = productAttributes.map(attr => ({
+                name: attr.Name || '',
+                min: attr.Minimum,
+                max: attr.Maximum,
+              }));
               const sizeInBytes = (firstSkuAvailability.Sku?.Properties?.Packages?.[0]?.MaxDownloadSizeInBytes) || (firstSkuAvailability.MaxDownloadSizeInBytes) || (product.InstallAttributes?.[0]?.Size) || product.PackageSize;
               const sizeInGB = sizeInBytes ? (sizeInBytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB' : 'N/A';
+
+              log('[get_game_details] Categories:', JSON.stringify(categories), '| Category:', category, '| from:', product.Properties?.Categories ? 'Properties' : 'LocalizedProperties', '| for:', gameId);
 
               const gameData = {
                 id: product.ProductId || '',
@@ -180,6 +192,7 @@ ipcMain.handle('get_game_details', async (event, gameId) => {
                 hero: superHeroArt?.Uri ? `https:${superHeroArt.Uri}` : (titledHeroArt?.Uri ? `https:${titledHeroArt.Uri}` : ''),
                 poster: posters?.Uri ? `https:${posters.Uri}` : '',
                 players: players,
+                attributes: attributes,
                 screenshots: screenshots.filter((_, index) => index % 2 === 0).map(screenshot => `https:${screenshot.Uri}`),
                 trailers: trailers.map(trailer => ({
                   id: trailer.TrailerId,
@@ -325,7 +338,7 @@ ipcMain.handle('get_package_info', async (event, productId) => {
 ipcMain.handle('open_folder_dialog', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openDirectory'],
-    title: 'Choisir le dossier d\'installation',
+    title: 'Select installation folder',
   });
   return result;
 });
@@ -362,15 +375,91 @@ ipcMain.handle('download_file', async (event, { url, downloadPath, gameId, gameN
   return { success: true, extractDir };
 });
 
+function httpGet(url, apiKey) {
+  return new Promise((resolve, reject) => {
+    const opts = apiKey ? { headers: { 'Authorization': `Bearer ${apiKey}` } } : {};
+    https.get(url, opts, (res) => {
+      let data = '';
+      res.on('data', (c) => data += c);
+      res.on('end', () => resolve(data));
+    }).on('error', reject);
+  });
+}
+
+function httpGetBuffer(url, apiKey) {
+  return new Promise((resolve, reject) => {
+    const opts = apiKey ? { headers: { 'Authorization': `Bearer ${apiKey}` } } : {};
+    https.get(url, opts, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+    }).on('error', reject);
+  });
+}
+
+function isBase64Json(body) {
+  try {
+    const parsed = JSON.parse(body);
+    return parsed && typeof parsed.body === 'string' ? parsed : null;
+  } catch { return null; }
+}
+
+async function fetchCikForProduct(productId) {
+  if (!CIK_API_URL) return null;
+  try {
+    const mappingUrl = `${CIK_API_URL.replace(/\/+$/, '')}/mapping/${productId}`;
+    log('[CIK API] Fetching mapping for product:', productId);
+
+    const mappingBody = await httpGet(mappingUrl, CIK_API_KEY);
+    const { cik: cikGuid } = JSON.parse(mappingBody);
+    if (!cikGuid) { log('[CIK API] No CIK mapping for:', productId); return null; }
+    log('[CIK API] CIK GUID:', cikGuid);
+
+    // Download CIK file (may be base64-encoded JSON or raw binary)
+    const cikUrl = `${CIK_API_URL.replace(/\/+$/, '')}/cik/${cikGuid}`;
+    log('[CIK API] Downloading CIK:', cikUrl);
+    const cikRaw = await httpGetBuffer(cikUrl, CIK_API_KEY);
+    let cikBuf;
+
+    // Check if response is base64 JSON (starts with '{')
+    if (cikRaw.length > 0 && cikRaw[0] === 0x7b) { // '{' byte
+      const jsonWrapper = isBase64Json(cikRaw.toString('utf8'));
+      if (jsonWrapper) {
+        cikBuf = Buffer.from(jsonWrapper.body, 'base64');
+        log('[CIK API] Decoded CIK from base64 JSON:', cikBuf.length, 'bytes');
+      } else {
+        cikBuf = cikRaw;
+        log('[CIK API] Using raw CIK bytes:', cikBuf.length, 'bytes');
+      }
+    } else {
+      cikBuf = cikRaw;
+      log('[CIK API] Using raw CIK bytes:', cikBuf.length, 'bytes');
+    }
+
+    const cikPath = path.join(app.getPath('temp'), cikGuid + '.cik');
+    fs.writeFileSync(cikPath, cikBuf);
+    log('[CIK API] Written CIK:', cikPath, '(' + cikBuf.length, 'bytes)');
+    return cikPath;
+  } catch (e) {
+    log('[CIK API] Error:', e.message);
+    return null;
+  }
+}
+
 function runExtraction(url, extractDir, gameId) {
   (async () => {
     try {
       log('[download_file] Starting XvdTool extraction...');
+
+      // Fetch CIK for this game from remote API (if configured)
+      const cikPath = await fetchCikForProduct(gameId);
+      if (cikPath) log('[download_file] Using CIK:', cikPath);
+
       await extractMsixvc(url, extractDir, (pct) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('download_progress', { gameId, receivedBytes: pct, totalBytes: 100, speed: 0 });
         }
-      });
+      }, cikPath);
       log('[download_file] Extraction completed successfully');
 
       // Copy OnlineFix files
@@ -427,7 +516,7 @@ function runExtraction(url, extractDir, gameId) {
   })();
 }
 
-function extractMsixvc(input, outputDir, onProgress = () => {}) {
+function extractMsixvc(input, outputDir, onProgress = () => {}, cikPath) {
   return new Promise((resolve, reject) => {
     log('[XvdTool] Checking path:', xvdToolPath);
     if (!fs.existsSync(xvdToolPath)) {
@@ -437,35 +526,16 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
     log('[XvdTool] Input:', input.slice(0, 80), '...');
     log('[XvdTool] Output:', outputDir);
 
-    // Decrypt CIK files into a temp Cik/ folder (auto-detected by XvdTool)
     const xvdDir = path.dirname(xvdToolPath);
-    const tmpSuffix = Math.random().toString(36).slice(2, 10);
-    const tmpCik = path.join(app.getPath('temp'), 'cik-' + tmpSuffix);
-    const xorKey = Buffer.from('XboxDownloader2024!@#$');
-    let hasCik = false;
-    try {
-      const { CIK_ENCRYPTED } = require('./cik-bundle.js');
-      if (CIK_ENCRYPTED && Object.keys(CIK_ENCRYPTED).length > 0) {
-        fs.mkdirSync(tmpCik, { recursive: true });
-        for (const [name, b64] of Object.entries(CIK_ENCRYPTED)) {
-          const buf = Buffer.from(b64, 'base64');
-          for (let i = 0; i < buf.length; i++) buf[i] ^= xorKey[i % xorKey.length];
-          fs.writeFileSync(path.join(tmpCik, name), buf);
-        }
-        hasCik = true;
-        log('[XvdTool] Decrypted to', tmpCik);
-      }
-    } catch (e) {
-      log('[XvdTool] No CIK bundle found');
-    }
 
     const args = ['extract', input, '-o', outputDir, '-n'];
-    if (hasCik) {
-      const files = fs.readdirSync(tmpCik).filter(f => f.endsWith('.cik'));
-      for (const f of files) args.push('-c', path.join(tmpCik, f));
-      log('[XvdTool] Added', files.length, 'CIK files via -c');
+    if (cikPath && fs.existsSync(cikPath)) {
+      args.push('-c', cikPath);
+      log('[XvdTool] Added CIK via -c:', cikPath);
     }
     log('[XvdTool] Cmd:', xvdToolPath, args.join(' '));
+    log('[XvdTool] CWD:', xvdDir);
+    log('[XvdTool] ENV PATH:', process.env.PATH?.slice(0, 200));
 
     const proc = spawn(xvdToolPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -475,8 +545,8 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
     let stdout = '';
     let cleaned = false;
     const cleanup = () => {
-      if (!cleaned && hasCik) {
-        try { fs.rmSync(tmpCik, { recursive: true, force: true }); } catch {}
+      if (!cleaned && cikPath) {
+        try { if (fs.existsSync(cikPath)) fs.unlinkSync(cikPath); } catch {}
         cleaned = true;
       }
     };
@@ -508,7 +578,8 @@ function extractMsixvc(input, outputDir, onProgress = () => {}) {
 
     proc.on('close', (code) => {
       clearTimeout(timeout);
-      cleanup();
+      // Delayed cleanup: XvdTool with -n streams in background and may still need CIK files
+      setTimeout(() => cleanup(), 30000);
       if (code === 0) resolve(outputDir);
       else reject(new Error(stderr.trim() || stdout.trim() || `Exit code ${code}`));
     });
@@ -559,21 +630,46 @@ ipcMain.handle('uninstall_game', async (event, { gameId, folderPath }) => {
 ipcMain.handle('scan_installed_games', async (event, downloadPath) => {
   downloadPath = downloadPath || 'C:\\Xbox Games';
   try {
-    if (!fs.existsSync(downloadPath)) return { downloadPath, games: [] };
+    if (!fs.existsSync(downloadPath)) return { downloadPath, games: [], sizes: {} };
     const folders = fs.readdirSync(downloadPath, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
     log('[Scan] Found folders:', folders.length);
-    return { downloadPath, games: folders };
+    const sizes = {};
+    for (const folder of folders) {
+      try {
+        sizes[folder] = getFolderSize(path.join(downloadPath, folder));
+      } catch { sizes[folder] = 0; }
+    }
+    return { downloadPath, games: folders, sizes };
   } catch (e) {
     log('[Scan] Error:', e.message);
-    return { downloadPath, games: [] };
+    return { downloadPath, games: [], sizes: {} };
   }
 });
 
+function getFolderSize(dirPath) {
+  let total = 0;
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        total += getFolderSize(fullPath);
+      } else if (entry.isFile()) {
+        total += fs.statSync(fullPath).size;
+      }
+    }
+  } catch {}
+  return total;
+}
+
 // IPC - Open folder in Explorer
 ipcMain.handle('open_folder', async (event, folderPath) => {
-  if (!folderPath || typeof folderPath !== 'string') return;
+  if (!folderPath || typeof folderPath !== 'string') { log('[open_folder] Invalid path'); return; }
   if (!fs.existsSync(folderPath)) { log('[open_folder] Not found:', folderPath); return; }
-  try { await shell.openPath(folderPath); } catch {}
+  try {
+    const result = await shell.openPath(folderPath);
+    log('[open_folder] Result:', folderPath, '->', result);
+  } catch (e) { log('[open_folder] Error:', e.message); }
 });
 
 // IPC - Launch game
@@ -588,6 +684,86 @@ ipcMain.handle('launch_game', async (event, folderPath) => {
       proc.unref();
     }
   } catch {}
+});
+
+// IPC - Check for app updates
+ipcMain.handle('check_app_update', async () => {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+    const currentVersion = pkg.version;
+
+    const options = {
+      hostname: 'api.github.com',
+      path: '/repos/MidacoYT/XboxDownloader/releases/latest',
+      method: 'GET',
+      headers: { 'User-Agent': 'Xbox-Downloader/1.0' },
+    };
+
+    return new Promise((resolve) => {
+      const req = https.request(options, (res) => {
+        let body = '';
+        res.on('data', (chunk) => body += chunk);
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(body);
+            if (!data.tag_name) { resolve({ hasUpdate: false }); return; }
+            const latestVersion = data.tag_name.replace(/^v/, '');
+            const hasUpdate = compareVersions(latestVersion, currentVersion) > 0;
+            const asset = (data.assets || []).find(a => a.name.endsWith('.exe') || a.name.endsWith('.Setup.exe'));
+            resolve({
+              hasUpdate,
+              currentVersion,
+              latestVersion,
+              downloadUrl: asset?.browser_download_url || null,
+              releaseUrl: data.html_url,
+              releaseName: data.name || data.tag_name,
+              releaseNotes: data.body || '',
+            });
+          } catch { resolve({ hasUpdate: false }); }
+        });
+      });
+      req.on('error', () => resolve({ hasUpdate: false }));
+      req.end();
+    });
+  } catch { return { hasUpdate: false }; }
+});
+
+function compareVersions(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+// IPC - Download and launch app update
+ipcMain.handle('download_app_update', async (event, downloadUrl) => {
+  if (!downloadUrl || typeof downloadUrl !== 'string') return { success: false };
+  try {
+    const tmpDir = app.getPath('temp');
+    const fileName = downloadUrl.split('/').pop() || 'XboxDownloader-Setup.exe';
+    const destPath = path.join(tmpDir, fileName);
+
+    log('[update] Downloading:', downloadUrl);
+    log('[update] To:', destPath);
+
+    const file = fs.createWriteStream(destPath);
+    await new Promise((resolve, reject) => {
+      https.get(downloadUrl, (res) => {
+        res.pipe(file);
+        file.on('finish', () => { file.close(); resolve(); });
+      }).on('error', reject);
+    });
+
+    log('[update] Downloaded, launching:', destPath);
+    await shell.openPath(destPath);
+    return { success: true };
+  } catch (e) {
+    log('[update] Error:', e.message);
+    return { success: false, error: e.message };
+  }
 });
 
 app.whenReady().then(createWindow);

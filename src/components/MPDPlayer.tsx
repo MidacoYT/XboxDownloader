@@ -12,94 +12,127 @@ const MPDPlayer: React.FC<MPDPlayerProps> = ({ url, isOpen, onClose }) => {
   const [volume, setVolume] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<any>(null);
 
   useEffect(() => {
-    if (!isOpen || !url) return;
+    console.log('[MPDPlayer] useEffect triggered - isOpen:', isOpen, 'url:', url);
+    if (!isOpen || !url) {
+      console.log('[MPDPlayer] Skipping - not open or no url');
+      return;
+    }
 
     const loadPlayer = async () => {
       try {
         setIsLoading(true);
         setError(null);
-        console.log('Loading MPD player with URL:', url);
+        console.log('[MPDPlayer] Starting loadPlayer, url type:', url.endsWith('.mpd') ? 'mpd' : 'other');
 
-        // Importer dashjs dynamiquement
-        const dashjs = await import('dashjs');
-        const MediaPlayer = dashjs.MediaPlayer;
-        console.log('DASH MediaPlayer imported:', MediaPlayer);
-
-        if (videoRef.current && MediaPlayer) {
-          console.log('Initializing DASH player...');
-          
-          // Initialiser le lecteur DASH
-          const player = MediaPlayer().create();
-          console.log('DASH player created:', player);
-          
-          // Initialisation simple sans configuration complexe
-          player.initialize(videoRef.current, url, true);
-          console.log('DASH player initialized with URL:', url);
-          
-          playerRef.current = player;
-
-          // Événements du lecteur
-          player.on(dashjs.MediaPlayer.events.ERROR, (e: any) => {
-            console.error('DASH Player Error:', e);
-            setError('Erreur de chargement du trailer: ' + (e.error?.message || 'Erreur inconnue'));
-            setIsLoading(false);
-          });
-
-          player.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
-            console.log('DASH Stream initialized');
-            setIsLoading(false);
-          });
-
-          player.on(dashjs.MediaPlayer.events.PLAYBACK_STARTED, () => {
-            console.log('DASH Playback started');
-            setIsPlaying(true);
-          });
-
-          player.on(dashjs.MediaPlayer.events.PLAYBACK_PAUSED, () => {
-            console.log('DASH Playback paused');
-            setIsPlaying(false);
-          });
-
-          player.on(dashjs.MediaPlayer.events.PLAYBACK_ENDED, () => {
-            console.log('DASH Playback ended');
-            setIsPlaying(false);
-          });
-
-          player.on(dashjs.MediaPlayer.events.MANIFEST_LOADED, () => {
-            console.log('DASH Manifest loaded successfully');
-          });
-
-          player.on(dashjs.MediaPlayer.events.FRAGMENT_LOADING_COMPLETED, () => {
-            console.log('DASH Fragment loading completed');
-          });
-        } else {
-          console.error('Video element or MediaPlayer not available');
-          console.log('videoRef.current:', videoRef.current);
-          console.log('MediaPlayer available:', !!MediaPlayer);
-          setError('Élément vidéo non disponible - réessayez');
+        if (!videoRef.current) {
+          console.error('[MPDPlayer] videoRef.current is null');
+          setError('Video element not available');
           setIsLoading(false);
+          return;
         }
+
+        // Set up video event listeners before any player initialization
+        const video = videoRef.current;
+        video.ontimeupdate = () => setCurrentTime(video.currentTime);
+        video.onloadedmetadata = () => setDuration(video.duration || 0);
+        video.onerror = () => {
+          setError('Failed to load video. Try opening in browser.');
+          setIsLoading(false);
+        };
+
+        if (url.endsWith('.mpd')) {
+          // Try dashjs for MPD streams
+          try {
+            console.log('[MPDPlayer] Importing dashjs...');
+            const dashjs = await import('dashjs');
+            console.log('[MPDPlayer] dashjs imported successfully:', Object.keys(dashjs));
+            const MediaPlayer = dashjs.MediaPlayer;
+            console.log('[MPDPlayer] MediaPlayer constructor:', !!MediaPlayer);
+            if (MediaPlayer) {
+              console.log('[MPDPlayer] Creating player instance...');
+              const player = MediaPlayer().create();
+              console.log('[MPDPlayer] Player created, initializing with URL:', url);
+              console.log('[MPDPlayer] videoRef.current:', videoRef.current);
+              player.initialize(videoRef.current, url, true);
+              console.log('[MPDPlayer] Player initialized successfully');
+              playerRef.current = player;
+
+              player.on(dashjs.MediaPlayer.events.ERROR, (e: any) => {
+                console.log('[MPDPlayer] DASH ERROR EVENT FIRED:', JSON.stringify(e));
+                console.error('[MPDPlayer] DASH Player Error object:', e);
+                fallbackToVideo(url);
+              });
+              player.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
+                console.log('[MPDPlayer] STREAM_INITIALIZED event');
+                setIsLoading(false);
+              });
+              player.on(dashjs.MediaPlayer.events.PLAYBACK_STARTED, () => {
+                console.log('[MPDPlayer] PLAYBACK_STARTED event');
+                setIsPlaying(true);
+              });
+              player.on(dashjs.MediaPlayer.events.PLAYBACK_PAUSED, () => {
+                console.log('[MPDPlayer] PLAYBACK_PAUSED event');
+                setIsPlaying(false);
+              });
+              player.on(dashjs.MediaPlayer.events.PLAYBACK_ENDED, () => {
+                console.log('[MPDPlayer] PLAYBACK_ENDED event');
+                setIsPlaying(false);
+              });
+              console.log('[MPDPlayer] All event listeners registered, returning');
+              return;
+            } else {
+              console.log('[MPDPlayer] MediaPlayer is falsy');
+            }
+          } catch (dashErr) {
+            console.log('[MPDPlayer] dashjs import/init failed:', dashErr);
+            console.warn('dashjs not available, falling back to native video:', dashErr);
+          }
+        } else {
+          console.log('[MPDPlayer] URL is not .mpd, using native video directly');
+        }
+
+        console.log('[MPDPlayer] Falling back to native HTML5 video with URL:', url);
+        fallbackToVideo(url);
       } catch (err) {
-        console.error('Error loading MPD player:', err);
-        setError('Impossible de charger le lecteur MPD: ' + (err instanceof Error ? err.message : 'Erreur inconnue'));
+        console.log('[MPDPlayer] Top-level error in loadPlayer:', err);
+        console.error('Error loading player:', err);
+        setError('Unable to load video: ' + (err instanceof Error ? err.message : 'Unknown error'));
         setIsLoading(false);
       }
     };
 
+    const fallbackToVideo = (videoUrl: string) => {
+      console.log('[MPDPlayer] fallbackToVideo called with:', videoUrl);
+      if (!videoRef.current) return;
+      const video = videoRef.current;
+      video.src = videoUrl;
+      video.onloadeddata = () => {
+        setIsLoading(false);
+        setDuration(video.duration || 0);
+        video.play().then(() => setIsPlaying(true)).catch(() => {});
+      };
+    };
+
+    console.log('[MPDPlayer] Calling loadPlayer()');
     loadPlayer();
 
-    // Nettoyage
     return () => {
+      console.log('[MPDPlayer] Cleanup running');
       if (playerRef.current) {
-        try {
-          playerRef.current.reset();
-        } catch (e) {
-          console.error('Error resetting player:', e);
-        }
+        console.log('[MPDPlayer] Resetting dashjs player');
+        try { playerRef.current.reset(); } catch {}
+        playerRef.current = null;
+      }
+      if (videoRef.current) {
+        console.log('[MPDPlayer] Cleaning up video element');
+        videoRef.current.pause();
+        videoRef.current.src = '';
       }
     };
   }, [isOpen, url]);
@@ -114,6 +147,23 @@ const MPDPlayer: React.FC<MPDPlayerProps> = ({ url, isOpen, onClose }) => {
     }
   };
 
+  const formatTime = (t: number) => {
+    if (!t || isNaN(t)) return '0:00';
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!videoRef.current || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const pct = Math.max(0, Math.min(1, x / rect.width));
+    const time = pct * duration;
+    videoRef.current.currentTime = time;
+    setCurrentTime(time);
+  };
+
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseFloat(e.target.value);
     setVolume(newVolume);
@@ -126,6 +176,10 @@ const MPDPlayer: React.FC<MPDPlayerProps> = ({ url, isOpen, onClose }) => {
 
   return (
     <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+        e.stopPropagation();
+      }}
       style={{
         position: 'fixed',
         top: 0,
@@ -229,7 +283,7 @@ const MPDPlayer: React.FC<MPDPlayerProps> = ({ url, isOpen, onClose }) => {
                   fontWeight: 600,
                 }}
               >
-                Ouvrir dans le navigateur
+                Open in browser
               </button>
             </div>
           ) : isLoading ? (
@@ -240,19 +294,19 @@ const MPDPlayer: React.FC<MPDPlayerProps> = ({ url, isOpen, onClose }) => {
                 textAlign: 'center',
               }}
             >
-              Chargement du trailer...
+              Loading trailer...
             </div>
-          ) : (
-            <video
-              ref={videoRef}
-              controls={false}
-              style={{
-                width: '100%',
-                maxHeight: '70vh',
-                objectFit: 'contain',
-              }}
-            />
-          )}
+          ) : null}
+          <video
+            ref={videoRef}
+            onClick={togglePlayPause}
+            style={{
+              width: '100%',
+              maxHeight: '70vh',
+              objectFit: 'contain',
+              display: error || isLoading ? 'none' : 'block',
+            }}
+          />
         </div>
 
         {/* Controls */}
@@ -260,65 +314,95 @@ const MPDPlayer: React.FC<MPDPlayerProps> = ({ url, isOpen, onClose }) => {
           <div
             style={{
               display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              gap: '16px',
-              padding: '16px 20px',
+              flexDirection: 'column',
+              gap: '10px',
+              padding: '12px 20px',
               backgroundColor: 'rgba(30, 30, 45, 0.9)',
               borderTop: '1px solid rgba(124, 58, 237, 0.2)',
             }}
           >
-            {/* Play/Pause Button */}
-            <button
-              onClick={togglePlayPause}
-              style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '50%',
-                background: 'var(--border-color)',
-                border: '1px solid rgba(124, 58, 237, 0.3)',
-                color: '#a855f7',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'background 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                (e.target as HTMLButtonElement).style.background = 'rgba(124, 58, 237, 0.3)';
-              }}
-              onMouseLeave={(e) => {
-                (e.target as HTMLButtonElement).style.background = 'rgba(124, 58, 237, 0.2)';
-              }}
-            >
-              {isPlaying ? <Pause size={20} /> : <Play size={20} />}
-            </button>
-
-            {/* Volume Control */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-            >
-              <Volume2 size={18} color="#a855f7" />
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.1"
-                value={volume}
-                onChange={handleVolumeChange}
+            {/* Timeline */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '.75rem', color: 'var(--text-muted)', minWidth: '35px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatTime(currentTime)}</span>
+              <div
+                onMouseDown={handleSeek}
+                onMouseMove={(e) => { if (e.buttons & 1) handleSeek(e); }}
                 style={{
-                  width: '100px',
-                  height: '4px',
-                  background: 'var(--border-color)',
-                  outline: 'none',
-                  borderRadius: '2px',
+                  flex: 1,
+                  height: '6px',
+                  borderRadius: '3px',
+                  background: 'rgba(255,255,255,0.15)',
                   cursor: 'pointer',
+                  position: 'relative',
                 }}
-              />
+              >
+                <div style={{
+                  height: '100%',
+                  width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%`,
+                  borderRadius: '3px',
+                  background: 'linear-gradient(90deg, #7c3aed, #a855f7)',
+                  transition: 'width 0.1s linear',
+                }} />
+                <div style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: `${duration > 0 ? (currentTime / duration) * 100 : 0}%`,
+                  transform: 'translate(-50%, -50%)',
+                  width: '12px',
+                  height: '12px',
+                  borderRadius: '50%',
+                  background: '#a855f7',
+                  boxShadow: '0 0 6px rgba(168,85,247,0.6)',
+                }} />
+              </div>
+              <span style={{ fontSize: '.75rem', color: 'var(--text-muted)', minWidth: '35px', fontVariantNumeric: 'tabular-nums' }}>{formatTime(duration)}</span>
+            </div>
+
+            {/* Bottom row: Play/Pause + Volume */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button
+                onClick={togglePlayPause}
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  background: 'var(--border-color)',
+                  border: '1px solid rgba(124, 58, 237, 0.3)',
+                  color: '#a855f7',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  (e.target as HTMLButtonElement).style.background = 'rgba(124, 58, 237, 0.3)';
+                }}
+                onMouseLeave={(e) => {
+                  (e.target as HTMLButtonElement).style.background = 'rgba(124, 58, 237, 0.2)';
+                }}
+              >
+                {isPlaying ? <Pause size={18} /> : <Play size={18} />}
+              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Volume2 size={16} color="#a855f7" />
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={volume}
+                  onChange={handleVolumeChange}
+                  style={{
+                    width: '80px',
+                    height: '4px',
+                    outline: 'none',
+                    borderRadius: '2px',
+                    cursor: 'pointer',
+                  }}
+                />
+              </div>
             </div>
           </div>
         )}

@@ -38,7 +38,7 @@ export default function App() {
   const [updatingAll, setUpdatingAll] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [loadingStatus, setLoadingStatus] = useState('Initialisation...');
+  const [loadingStatus, setLoadingStatus] = useState('Initializing...');
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -47,34 +47,38 @@ export default function App() {
   useEffect(() => {
     const init = async () => {
       try {
-        setLoadingStatus('Chargement des paramètres...');
+        setLoadingStatus('Loading settings...');
         const settings = await SettingsService.getSettings();
         setTheme(settings.theme || 'dark');
       } catch {}
 
       try {
-        setLoadingStatus('Récupération de la liste des jeux...');
+        setLoadingStatus('Fetching game list...');
         const xboxGames = await xboxApi.getGamePassGamesFull();
-        const transformedGames: Game[] = xboxGames.map(game => ({
-          id: game.id,
-          title: game.title,
-          developer: game.developer || 'Unknown',
-          publisher: game.publisher || 'Xbox Game Studios',
-          genre: game.genre || ['Action'],
-          rating: game.rating || 4.5,
-          size: game.size || '50 GB',
-          sizeGB: game.sizeGB || 0,
-          releaseDate: game.releaseDate || new Date().toISOString().split('T')[0],
-          description: game.description || 'Available on Xbox Game Pass',
-          cover: game.cover || 'https://images.pexels.com/photos/3165335/pexels-photo-3165335.jpeg?auto=compress&cs=tinysrgb&w=400&h=600&fit=crop',
-          hero: game.hero || 'https://images.pexels.com/photos/3165335/pexels-photo-3165335.jpeg?auto=compress&cs=tinysrgb&w=1200&h=600&fit=crop',
-          tags: game.tags || ['Game Pass'],
-          players: game.players || '1',
-          metacritic: game.metacritic || 80,
-          ageRating: game.ageRating || 'PEGI 12',
-          installed: false,
-          downloadProgress: 0,
-        }));
+          const transformedGames: Game[] = xboxGames.map(game => ({
+            id: game.id,
+            title: game.title,
+            developer: game.developer || 'Unknown',
+            publisher: game.publisher || 'Xbox Game Studios',
+            genre: game.genre?.length ? game.genre : ['Action'],
+            rating: game.rating || 4.5,
+            size: game.size || '50 GB',
+            sizeGB: game.sizeGB || 0,
+            releaseDate: game.releaseDate || new Date().toISOString().split('T')[0],
+            description: game.description || 'Available on Xbox Game Pass',
+            cover: game.cover || 'https://images.pexels.com/photos/3165335/pexels-photo-3165335.jpeg?auto=compress&cs=tinysrgb&w=400&h=600&fit=crop',
+            hero: game.hero || 'https://images.pexels.com/photos/3165335/pexels-photo-3165335.jpeg?auto=compress&cs=tinysrgb&w=1200&h=600&fit=crop',
+            tags: game.tags?.length ? game.tags : ['Game Pass'],
+            categories: game.categories || [],
+            category: game.category || '',
+            attributes: game.attributes || [],
+            players: game.players || '1',
+            metacritic: game.metacritic || 80,
+            ageRating: game.ageRating || 'PEGI 12',
+            state: game.state,
+            installed: false,
+            downloadProgress: 0,
+          }));
         setGameList(transformedGames);
 
         // Scan for installed games on disk
@@ -82,15 +86,18 @@ export default function App() {
           const s = await SettingsService.getSettings();
           const scan = await window.electronAPI?.scanInstalledGames(s.downloadPath || 'C:\\Xbox Games\\');
           if (scan?.games?.length) {
-            setGameList(prev => prev.map(g => ({
-              ...g,
-              installed: scan.games.some(f => f.toLowerCase() === g.title.toLowerCase() || f === g.id),
-            })));
+            setGameList(prev => prev.map(g => {
+              const matchedFolder = scan.games.find(f => f.toLowerCase() === g.title.toLowerCase() || f === g.id);
+              if (!matchedFolder) return g;
+              const folderSizeBytes = scan.sizes?.[matchedFolder] || 0;
+              const folderSizeGB = folderSizeBytes > 0 ? folderSizeBytes / (1024 * 1024 * 1024) : g.sizeGB;
+              return { ...g, installed: true, sizeGB: folderSizeGB };
+            }));
           }
         } catch {}
       } catch {}
 
-      setLoadingStatus('Prêt !');
+      setLoadingStatus('Ready!');
       setTimeout(() => setIsInitialLoading(false), 400);
     };
 
@@ -102,7 +109,7 @@ export default function App() {
       if (e.key === 'Escape') setSelectedGame(null);
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
-        const searchInput = document.querySelector('input[placeholder="Rechercher..."]') as HTMLInputElement;
+        const searchInput = document.querySelector('input[placeholder="Search..."]') as HTMLInputElement;
         searchInput?.focus();
       }
       if (e.key === 'Enter' && activeTab !== 'store') setActiveTab('store');
@@ -227,7 +234,10 @@ export default function App() {
   const handleDetails = useCallback(async (game: Game) => {
     try {
       const gameDetails = await window.electronAPI.getGameDetails(game.id);
-      setSelectedGame(gameDetails || game);
+      const merged = { ...game, ...gameDetails };
+      console.log('[Details] game.categories:', game.categories, '| merged.categories:', merged.categories);
+      console.log('[Details] game.genre:', game.genre, '| merged.genre:', merged.genre);
+      setSelectedGame(merged);
     } catch {
       setSelectedGame(game);
     }
@@ -247,8 +257,11 @@ export default function App() {
       const settings = await SettingsService.getSettings();
       const base = (settings.downloadPath || 'C:\\Xbox Games').replace(/\\+$/, '');
       const folder = base + '\\' + game.title.replace(/[<>:"/\\|?*]/g, '_').trim();
-      window.electronAPI?.openFolder(folder);
-    } catch {}
+      console.log('[Game Location] Opening folder:', folder);
+      await window.electronAPI?.openFolder(folder);
+    } catch (e) {
+      console.error('[Game Location] Error:', e);
+    }
   }, []);
 
   const handleRefreshLibrary = useCallback(async () => {
@@ -256,10 +269,13 @@ export default function App() {
       const settings = await SettingsService.getSettings();
       const scan = await window.electronAPI?.scanInstalledGames(settings.downloadPath || 'C:\\Xbox Games\\');
       if (scan?.games?.length) {
-        setGameList(prev => prev.map(g => ({
-          ...g,
-          installed: scan.games.some(f => f.toLowerCase() === g.title.toLowerCase() || f === g.id),
-        })));
+        setGameList(prev => prev.map(g => {
+          const matchedFolder = scan.games.find(f => f.toLowerCase() === g.title.toLowerCase() || f === g.id);
+          if (!matchedFolder) return { ...g, installed: false };
+          const folderSizeBytes = scan.sizes?.[matchedFolder] || 0;
+          const folderSizeGB = folderSizeBytes > 0 ? folderSizeBytes / (1024 * 1024 * 1024) : g.sizeGB;
+          return { ...g, installed: true, sizeGB: folderSizeGB };
+        }));
       }
     } catch {}
   }, []);
@@ -296,7 +312,7 @@ export default function App() {
         );
       case 'store':
         return (
-          <Suspense fallback={<div style={{ color: 'var(--text-secondary)', padding: '20px' }}>Chargement...</div>}>
+          <Suspense fallback={<div style={{ color: 'var(--text-secondary)', padding: '20px' }}>Loading...</div>}>
             <StorePage
               games={filteredGames}
               onDownload={handleDownload}
@@ -304,20 +320,6 @@ export default function App() {
               onUninstall={handleUninstall}
               onPlay={handlePlay}
             onDetails={handleDetails}
-            downloadingIds={downloadingIds}
-          />
-        );
-      case 'library':
-        return (
-          <LibraryPage
-            installedGames={installedGames}
-            onDownload={handleDownload}
-            onUpdate={handleUpdate}
-            onUninstall={handleUninstall}
-            onPlay={handlePlay}
-            onDetails={handleDetails}
-            onOpenFolder={handleOpenFolder}
-            onRefresh={handleRefreshLibrary}
             downloadingIds={downloadingIds}
           />
           </Suspense>
@@ -331,6 +333,8 @@ export default function App() {
             onUninstall={handleUninstall}
             onPlay={handlePlay}
             onDetails={handleDetails}
+            onOpenFolder={handleOpenFolder}
+            onRefresh={handleRefreshLibrary}
             downloadingIds={downloadingIds}
           />
         );

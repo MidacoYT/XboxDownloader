@@ -1,5 +1,5 @@
-import React from 'react';
-import { RefreshCw, CheckCircle, HardDrive, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { RefreshCw, CheckCircle, HardDrive, Loader2, Download, ExternalLink } from 'lucide-react';
 import { Game } from '../data/games';
 
 interface UpdatesPageProps {
@@ -17,6 +17,19 @@ const UpdatesPage: React.FC<UpdatesPageProps> = ({
   updatingAll,
   onUpdateAll,
 }) => {
+  const [appUpdate, setAppUpdate] = useState<{ hasUpdate: boolean; currentVersion?: string; latestVersion?: string; downloadUrl?: string | null; releaseUrl?: string; releaseName?: string } | null>(null);
+  const [downloadingUpdate, setDownloadingUpdate] = useState(false);
+
+  useEffect(() => {
+    window.electronAPI?.checkAppUpdate().then(setAppUpdate);
+  }, []);
+
+  const handleDownloadAppUpdate = async () => {
+    if (!appUpdate?.downloadUrl || downloadingUpdate) return;
+    setDownloadingUpdate(true);
+    await window.electronAPI?.downloadAppUpdate(appUpdate.downloadUrl);
+    setDownloadingUpdate(false);
+  };
   const totalUpdateSize = gamesWithUpdates.reduce((acc, g) => {
     const size = g.updateSize ? parseFloat(g.updateSize.replace(/[^0-9.]/g, '')) : 0;
     return acc + size;
@@ -70,8 +83,62 @@ const UpdatesPage: React.FC<UpdatesPageProps> = ({
         )}
       </div>
 
-      {/* Update list */}
-      {gamesWithUpdates.length === 0 ? (
+      {/* App Update */}
+      {appUpdate?.hasUpdate && (
+        <div style={{
+          padding: '20px',
+          borderRadius: '14px',
+          background: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(168,85,247,0.06))',
+          border: '1px solid rgba(124,58,237,0.3)',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Download size={18} color="#a855f7" />
+                Xbox Downloader {appUpdate.latestVersion} available
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                Current version: v{appUpdate.currentVersion} → <strong style={{ color: '#a855f7' }}>v{appUpdate.latestVersion}</strong>
+                {appUpdate.releaseName && <span> — {appUpdate.releaseName}</span>}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleDownloadAppUpdate}
+                disabled={downloadingUpdate}
+                className="btn-primary"
+                style={{
+                  padding: '10px 20px', borderRadius: '10px', fontSize: '0.85rem',
+                  display: 'flex', alignItems: 'center', gap: '7px', cursor: downloadingUpdate ? 'not-allowed' : 'pointer',
+                  fontWeight: 600, opacity: downloadingUpdate ? 0.7 : 1,
+                }}
+              >
+                {downloadingUpdate ? (
+                  <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Downloading...</>
+                ) : (
+                  <><Download size={15} /> Download & Install</>
+                )}
+              </button>
+              {appUpdate.releaseUrl && (
+                <button
+                  onClick={() => window.open(appUpdate.releaseUrl!, '_blank')}
+                  style={{
+                    padding: '10px 16px', borderRadius: '10px', fontSize: '0.85rem',
+                    background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)',
+                    color: 'var(--text-secondary)', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 500,
+                  }}
+                >
+                  <ExternalLink size={14} /> Release notes
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Game Update list */}
+      {gamesWithUpdates.length === 0 && !appUpdate?.hasUpdate ? (
         <div style={{
           padding: '60px 20px',
           textAlign: 'center',

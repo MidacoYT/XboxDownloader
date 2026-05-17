@@ -68,7 +68,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, currentTheme
         const loadedSettings = await SettingsService.getSettings();
         setSettings(loadedSettings);
       } catch {
-        setError('Impossible de charger les paramètres.');
+        setError('Unable to load settings.');
       } finally {
         setIsLoading(false);
       }
@@ -89,7 +89,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, currentTheme
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch {
-      setError('Impossible de sauvegarder les paramètres.');
+      setError('Unable to save settings.');
     } finally {
       setIsLoading(false);
     }
@@ -103,7 +103,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, currentTheme
       const defaultSettings = await SettingsService.getSettings();
       setSettings(defaultSettings);
     } catch {
-      setError('Impossible de réinitialiser les paramètres.');
+      setError('Unable to reset settings.');
     } finally {
       setIsLoading(false);
     }
@@ -118,7 +118,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, currentTheme
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh', color: 'var(--text-secondary)' }}>
         <div style={{ textAlign: 'center' }}>
           <Loader2 size={32} style={{ animation: 'spin 1s linear infinite', color: '#a855f7', margin: '0 auto 16px' }} />
-          <p>Chargement des paramètres...</p>
+          <p>Loading settings...</p>
         </div>
       </div>
     );
@@ -132,7 +132,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, currentTheme
           <Sliders size={22} style={{ color: '#a855f7' }} />
           Settings
         </h1>
-        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '4px' }}>Configurez votre expérience de téléchargement</p>
+        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '4px' }}>Configure your download experience</p>
       </div>
 
       {error && (
@@ -170,14 +170,14 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, currentTheme
                 }}
               >
                 <Moon size={14} />
-                {t === 'dark' ? 'Sombre' : 'Clair'}
+                {t === 'dark' ? 'Dark' : 'Light'}
               </button>
             ))}
           </div>
         </div>
 
         <div style={fieldStyle}>
-          <label style={labelStyle}>Langue</label>
+          <label style={labelStyle}>Language</label>
           <div style={{ display: 'flex', gap: '8px' }}>
             {(['en', 'fr'] as const).map(l => (
               <button
@@ -192,7 +192,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, currentTheme
                   transition: 'all 0.2s ease',
                 }}
               >
-                {l === 'en' ? 'English' : 'Français'}
+                {l === 'en' ? 'English' : 'French'}
               </button>
             ))}
           </div>
@@ -207,7 +207,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, currentTheme
         </div>
 
         <div style={fieldStyle}>
-          <label style={labelStyle}>Dossier d'installation</label>
+          <label style={labelStyle}>Installation folder</label>
           <FolderSelector
             currentPath={settings.downloadPath || 'C:\\Xbox Games\\'}
             onPathChange={(path) => update('downloadPath', path)}
@@ -225,8 +225,8 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, currentTheme
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderTop: '1px solid rgba(124,58,237,0.06)' }}>
           <div>
-            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>Téléchargements simultanés</div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Maximum de téléchargements en parallèle</div>
+            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>Concurrent downloads</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Maximum parallel downloads</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button
@@ -258,7 +258,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, currentTheme
       <div style={cardStyle}>
         <div style={sectionTitleStyle}>
           <Layers size={15} style={{ color: '#a855f7' }} />
-          Avancé
+          Advanced
         </div>
 
         <div style={{
@@ -266,9 +266,9 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, currentTheme
           padding: '4px 0',
         }}>
           <div>
-            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>Mises à jour automatiques</div>
+            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>Automatic updates</div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Télécharger automatiquement les mises à jour des jeux installés
+              Automatically download updates for installed games
             </div>
           </div>
           <ToggleSwitch
@@ -297,11 +297,11 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, currentTheme
           onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
         >
           {isLoading ? (
-            <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Sauvegarde...</>
+            <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Saving...</>
           ) : saved ? (
-            <><Check size={16} /> Sauvegardé</>
+            <><Check size={16} /> Saved</>
           ) : (
-            <><Save size={16} /> Sauvegarder</>
+            <><Save size={16} /> Save</>
           )}
         </button>
 
