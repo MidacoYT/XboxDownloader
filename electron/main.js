@@ -456,10 +456,10 @@ async function fetchCikForProduct(productId) {
     // Use a lock file to prevent concurrent writes from pre-fetch + on-demand
     const lockPath = cachedPath + '.lock';
 
-    // Check persistent cache first — must be exactly 32 bytes (AES-256 key)
+    // Check persistent cache first — must be exactly 48 bytes (GUID header + AES key)
     if (fs.existsSync(cachedPath)) {
       const stat = fs.statSync(cachedPath);
-      if (stat.size === 32) {
+      if (stat.size === 48) {
         log('[CIK API] Using persistent cached CIK:', cachedPath);
         return cachedPath;
       }
@@ -478,7 +478,7 @@ async function fetchCikForProduct(productId) {
         // If file appeared while waiting, use it
         if (fs.existsSync(cachedPath)) {
           const stat = fs.statSync(cachedPath);
-          if (stat.size === 32) { return cachedPath; }
+          if (stat.size === 48) { return cachedPath; }
         }
       }
     }
@@ -487,7 +487,7 @@ async function fetchCikForProduct(productId) {
       // Double-check after lock acquisition (pre-fetch may have written it)
       if (fs.existsSync(cachedPath)) {
         const stat = fs.statSync(cachedPath);
-        if (stat.size === 32) { return cachedPath; }
+        if (stat.size === 48) { return cachedPath; }
       }
 
       // Download CIK file (may be base64-encoded JSON or raw binary)
@@ -511,13 +511,9 @@ async function fetchCikForProduct(productId) {
         log('[CIK API] Using raw CIK bytes:', cikBuf.length, 'bytes');
       }
 
-      // Strip 16-byte GUID header if present — -c expects 32 bytes (AES-256 key only)
-      if (cikBuf.length === 48) {
-        cikBuf = cikBuf.slice(16);
-        log('[CIK API] Stripped GUID header, now:', cikBuf.length, 'bytes');
-      }
-      if (cikBuf.length !== 32) {
-        log('[CIK API] Unexpected CIK size:', cikBuf.length, 'bytes — expected 32');
+      // XvdTool -c expects 48 bytes (16-byte GUID header + 32-byte AES key)
+      if (cikBuf.length !== 48) {
+        log('[CIK API] Unexpected CIK size:', cikBuf.length, 'bytes — expected 48');
         return null;
       }
 
