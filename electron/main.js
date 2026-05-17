@@ -4,8 +4,7 @@ const https = require('https');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 
-// Use SwiftShader software rendering to avoid GPU command buffer errors
-app.commandLine.appendSwitch('use-gl', 'swiftshader');
+
 
 let mainWindow = null;
 
