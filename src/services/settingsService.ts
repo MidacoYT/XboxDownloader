@@ -19,7 +19,7 @@ export class SettingsService {
         language: 'en',
         theme: 'dark',
         autoDownload: true,
-        downloadSpeed: 10,
+        downloadSpeed: 0,
         maxConcurrentDownloads: 3,
       };
     } catch (error) {
@@ -52,7 +52,7 @@ export class SettingsService {
       language: 'en',
       theme: 'dark',
       autoDownload: true,
-      downloadSpeed: 10,
+      downloadSpeed: 0,
       maxConcurrentDownloads: 3,
     };
   }

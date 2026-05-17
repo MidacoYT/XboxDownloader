@@ -642,8 +642,9 @@ function extractMsixvc(input, outputDir, onProgress = () => {}, cikPath) {
       stdout += text;
       const trimmed = text.trim();
       if (trimmed) log('[XvdTool]', trimmed);
-      const m = trimmed.match(/(\d{1,3})%/);
-      if (m) onProgress(parseInt(m[1], 10));
+      // Progress from main region only — ignore small secondary regions
+      const mainMatch = trimmed.match(/Extracting region 0x00000002: (\d{1,3})%/);
+      if (mainMatch) onProgress(parseInt(mainMatch[1], 10));
     });
 
     proc.stderr.on('data', (chunk) => {
@@ -651,8 +652,8 @@ function extractMsixvc(input, outputDir, onProgress = () => {}, cikPath) {
       stderr += text;
       const trimmed = text.trim();
       if (trimmed) log('[XvdTool]', trimmed);
-      const m = trimmed.match(/(\d{1,3})%/);
-      if (m) onProgress(parseInt(m[1], 10));
+      const mainMatch = trimmed.match(/Extracting region 0x00000002: (\d{1,3})%/);
+      if (mainMatch) onProgress(parseInt(mainMatch[1], 10));
     });
 
     proc.on('close', (code) => {
