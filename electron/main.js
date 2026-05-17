@@ -450,44 +450,85 @@ async function fetchCikForProduct(productId) {
     if (!cikGuid) { log('[CIK API] No CIK mapping for:', productId); return null; }
     log('[CIK API] CIK GUID:', cikGuid);
 
-    // Check persistent cache first (survives app restarts)
     ensureCikCacheDir();
     const cachedPath = path.join(cikCacheDir, cikGuid + '.cik');
+
+    // Use a lock file to prevent concurrent writes from pre-fetch + on-demand
+    const lockPath = cachedPath + '.lock';
+
+    // Check persistent cache first — must be exactly 32 bytes (AES-256 key)
     if (fs.existsSync(cachedPath)) {
-      log('[CIK API] Using persistent cached CIK:', cachedPath);
-      return cachedPath;
+      const stat = fs.statSync(cachedPath);
+      if (stat.size === 32) {
+        log('[CIK API] Using persistent cached CIK:', cachedPath);
+        return cachedPath;
+      }
+      log('[CIK API] Cached CIK has wrong size (' + stat.size + ' bytes), re-downloading');
+      try { fs.unlinkSync(cachedPath); } catch {}
     }
 
-    // Download CIK file (may be base64-encoded JSON or raw binary)
-    const cikUrl = `${CIK_API_URL.replace(/\/+$/, '')}/cik/${cikGuid}`;
-    log('[CIK API] Downloading CIK:', cikUrl);
-    const cikRaw = await httpGetBuffer(cikUrl, CIK_API_KEY);
-    let cikBuf;
+    // Acquire lock
+    while (true) {
+      try {
+        fs.writeFileSync(lockPath, '', { flag: 'wx' });
+        break;
+      } catch {
+        // Another process is downloading this CIK — wait and retry
+        await new Promise(r => setTimeout(r, 200));
+        // If file appeared while waiting, use it
+        if (fs.existsSync(cachedPath)) {
+          const stat = fs.statSync(cachedPath);
+          if (stat.size === 32) { return cachedPath; }
+        }
+      }
+    }
 
-    // Check if response is base64 JSON (starts with '{')
-    if (cikRaw.length > 0 && cikRaw[0] === 0x7b) { // '{' byte
-      const jsonWrapper = isBase64Json(cikRaw.toString('utf8'));
-      if (jsonWrapper) {
-        cikBuf = Buffer.from(jsonWrapper.body, 'base64');
-        log('[CIK API] Decoded CIK from base64 JSON:', cikBuf.length, 'bytes');
+    try {
+      // Double-check after lock acquisition (pre-fetch may have written it)
+      if (fs.existsSync(cachedPath)) {
+        const stat = fs.statSync(cachedPath);
+        if (stat.size === 32) { return cachedPath; }
+      }
+
+      // Download CIK file (may be base64-encoded JSON or raw binary)
+      const cikUrl = `${CIK_API_URL.replace(/\/+$/, '')}/cik/${cikGuid}`;
+      log('[CIK API] Downloading CIK:', cikUrl);
+      const cikRaw = await httpGetBuffer(cikUrl, CIK_API_KEY);
+      let cikBuf;
+
+      // Check if response is base64 JSON (starts with '{')
+      if (cikRaw.length > 0 && cikRaw[0] === 0x7b) {
+        const jsonWrapper = isBase64Json(cikRaw.toString('utf8'));
+        if (jsonWrapper) {
+          cikBuf = Buffer.from(jsonWrapper.body, 'base64');
+          log('[CIK API] Decoded CIK from base64 JSON:', cikBuf.length, 'bytes');
+        } else {
+          cikBuf = cikRaw;
+          log('[CIK API] Using raw CIK bytes:', cikBuf.length, 'bytes');
+        }
       } else {
         cikBuf = cikRaw;
         log('[CIK API] Using raw CIK bytes:', cikBuf.length, 'bytes');
       }
-    } else {
-      cikBuf = cikRaw;
-      log('[CIK API] Using raw CIK bytes:', cikBuf.length, 'bytes');
-    }
 
-    // Strip 16-byte GUID header if present (48 → 32 bytes)
-    if (cikBuf.length === 48) {
-      cikBuf = cikBuf.slice(16);
-      log('[CIK API] Stripped GUID header, now:', cikBuf.length, 'bytes');
-    }
+      // Strip 16-byte GUID header if present (48 → 32 bytes)
+      if (cikBuf.length === 48) {
+        cikBuf = cikBuf.slice(16);
+        log('[CIK API] Stripped GUID header, now:', cikBuf.length, 'bytes');
+      }
 
-    fs.writeFileSync(cachedPath, cikBuf);
-    log('[CIK API] Written CIK to persistent cache:', cachedPath, '(' + cikBuf.length, 'bytes)');
-    return cachedPath;
+      // Validate size before writing — must be 32 bytes for XvdTool
+      if (cikBuf.length !== 32) {
+        log('[CIK API] Unexpected CIK size:', cikBuf.length, 'bytes — expected 32');
+        return null;
+      }
+
+      fs.writeFileSync(cachedPath, cikBuf);
+      log('[CIK API] Written CIK to persistent cache:', cachedPath, '(' + cikBuf.length, 'bytes)');
+      return cachedPath;
+    } finally {
+      try { if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath); } catch {}
+    }
   } catch (e) {
     log('[CIK API] Error:', e.message);
     return null;
@@ -582,8 +623,9 @@ function extractMsixvc(input, outputDir, onProgress = () => {}, cikPath) {
 
     const args = ['extract', input, '-o', outputDir, '-n'];
     if (cikPath && fs.existsSync(cikPath)) {
-      args.push('-c', cikPath);
-      log('[XvdTool] Added CIK via -c:', cikPath);
+      // Use -k (folder) — XvdTool auto-selects the matching key from key ID in the stream
+      args.push('-k', cikCacheDir);
+      log('[XvdTool] Added CIK folder via -k:', cikCacheDir);
     }
     log('[XvdTool] Cmd:', xvdToolPath, args.join(' '));
     log('[XvdTool] CWD:', xvdDir);
@@ -595,18 +637,10 @@ function extractMsixvc(input, outputDir, onProgress = () => {}, cikPath) {
     });
     let stderr = '';
     let stdout = '';
-    let cleaned = false;
-    const cleanup = () => {
-      if (!cleaned && cikPath) {
-        try { if (fs.existsSync(cikPath)) fs.unlinkSync(cikPath); } catch {}
-        cleaned = true;
-      }
-    };
 
     const timeout = setTimeout(() => {
       log('[XvdTool] TIMEOUT');
       proc.kill();
-      cleanup();
       reject(new Error('Extraction timed out after 10 minutes'));
     }, 600000);
 
@@ -630,15 +664,12 @@ function extractMsixvc(input, outputDir, onProgress = () => {}, cikPath) {
 
     proc.on('close', (code) => {
       clearTimeout(timeout);
-      // Delayed cleanup: XvdTool with -n streams in background and may still need CIK files
-      setTimeout(() => cleanup(), 30000);
       if (code === 0) resolve(outputDir);
       else reject(new Error(stderr.trim() || stdout.trim() || `Exit code ${code}`));
     });
 
     proc.on('error', (err) => {
       clearTimeout(timeout);
-      cleanup();
       reject(new Error(`Cannot launch XvdTool: ${err.message}. Ensure .NET 8 Runtime is installed.`));
     });
   });
