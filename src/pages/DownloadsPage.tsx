@@ -61,10 +61,10 @@ const formatBytes = (bytes: number): string => {
 };
 
 const formatSpeed = (bytesPerSec: number): string => {
-  if (bytesPerSec <= 0) return '-- MB/s';
-  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+  if (bytesPerSec <= 0) return '-- MiB/s';
+  const units = ['B/s', 'KiB/s', 'MiB/s', 'GiB/s'];
   const i = Math.min(Math.floor(Math.log10(bytesPerSec) / 3), units.length - 1);
-  return (bytesPerSec / Math.pow(1000, i)).toFixed(1) + ' ' + units[i];
+  return (bytesPerSec / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
 };
 
 const formatEta = (remainingBytes: number, speed: number): string => {

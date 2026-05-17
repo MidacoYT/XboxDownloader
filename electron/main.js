@@ -568,9 +568,10 @@ function runExtraction(url, extractDir, gameId, gameSize) {
       const t2 = Date.now();
       if (cikPath) log('[download_file] Using CIK:', cikPath, '| fetch time:', (t2-t1)+'ms');
 
-      // Sliding-window speed tracking (like Spectre.Console)
-      const speedSamples = [];
-      const SPEED_WINDOW_MS = 3000;
+      // Sliding-window speed tracking (matching Spectre.Console's ProgressTask)
+      const speedSamples = [{ time: Date.now(), bytes: 0 }]; // Start sample (value=0 at startTime)
+      const SPEED_WINDOW_MS = 30000; // Match Spectre.Console default (~30s)
+      let lastKnownSpeed = 0;
 
       await extractMsixvc(url, extractDir, (pct) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -580,12 +581,13 @@ function runExtraction(url, extractDir, gameId, gameSize) {
 
           // Add sample to sliding window
           speedSamples.push({ time: now, bytes: receivedBytes });
-          // Remove samples older than window
+          // Prune samples older than window
           while (speedSamples.length > 1 && speedSamples[0].time < now - SPEED_WINDOW_MS) {
             speedSamples.shift();
           }
 
-          let speed = 0;
+          // Speed = (latest.bytes - earliest.bytes) / (latest.time - earliest.time) in bytes/s
+          let speed = lastKnownSpeed; // Cache previous if not enough samples
           if (speedSamples.length >= 2 && gameSize > 0) {
             const first = speedSamples[0];
             const last = speedSamples[speedSamples.length - 1];
@@ -593,10 +595,12 @@ function runExtraction(url, extractDir, gameId, gameSize) {
             const deltaMs = last.time - first.time;
             if (deltaBytes > 0 && deltaMs > 0) {
               speed = Math.round(deltaBytes / (deltaMs / 1000));
+              lastKnownSpeed = speed;
             }
           }
 
-          mainWindow.webContents.send('download_progress', { gameId, receivedBytes, totalBytes, speed });
+          // Only send non-zero speed once we have real data
+          mainWindow.webContents.send('download_progress', { gameId, receivedBytes, totalBytes, speed: speed > 0 ? speed : 0 });
         }
       }, cikPath);
       const t3 = Date.now();
