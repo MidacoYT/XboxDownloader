@@ -13,6 +13,17 @@ const onlineFixDir = path.join(isDev ? path.dirname(__dirname) : process.resourc
 const CIK_API_URL = 'https://xboxapi.netlify.app';
 const CIK_API_KEY = '9eEo0ksYvZTsXgPiJUz7hQCio18hW+mPlQhy0UBq+10=';
 
+// Persistent CIK cache location (survives app restarts)
+const cikCacheDir = path.join(app.getPath('userData'), 'cik-cache');
+
+
+function ensureCikCacheDir() {
+  if (!fs.existsSync(cikCacheDir)) {
+    fs.mkdirSync(cikCacheDir, { recursive: true });
+    log('[CIK] Created cache dir:', cikCacheDir);
+  }
+}
+
 function log(...args) {
   const msg = args.join(' ');
   console.log(msg);
@@ -113,7 +124,11 @@ ipcMain.handle('get_gamepass_games', async () => {
             .map((item) => ({ id: item.productId, name: item.name || 'Unknown Game', state: item.state }));
         }
 
-        if (gameIds.length > 0) return gameIds;
+        if (gameIds.length > 0) {
+          // Pre-fetch CIK for all games in background (don't await)
+          setTimeout(() => prefetchAllCiks(gameIds.map(g => g.id)), 100);
+          return gameIds;
+        }
       } catch (e) {
         console.error('[Games] Error fetching from', url, e.message);
       }
@@ -124,6 +139,26 @@ ipcMain.handle('get_gamepass_games', async () => {
     return [];
   }
 });
+
+// Background pre-fetch all CIK keys so downloads are instant
+async function prefetchAllCiks(productIds) {
+  ensureCikCacheDir();
+  log('[CIK] Pre-fetching CIK for', productIds.length, 'games...');
+  let fetched = 0;
+  const batchSize = 5;
+  for (let i = 0; i < productIds.length; i += batchSize) {
+    const batch = productIds.slice(i, i + batchSize);
+    await Promise.all(batch.map(async (pid) => {
+      try {
+        // fetchCikForProduct already checks cache and saves persistently
+        await fetchCikForProduct(pid);
+        fetched++;
+      } catch {}
+    }));
+    if (fetched > 0 && fetched % 10 === 0) log(`[CIK] Pre-fetched ${fetched}/${productIds.length}`);
+  }
+  log(`[CIK] Pre-fetch complete: ${fetched}/${productIds.length} CIK keys cached`);
+}
 
 // IPC Handler - Get game details
 ipcMain.handle('get_game_details', async (event, gameId) => {
@@ -415,6 +450,14 @@ async function fetchCikForProduct(productId) {
     if (!cikGuid) { log('[CIK API] No CIK mapping for:', productId); return null; }
     log('[CIK API] CIK GUID:', cikGuid);
 
+    // Check persistent cache first (survives app restarts)
+    ensureCikCacheDir();
+    const cachedPath = path.join(cikCacheDir, cikGuid + '.cik');
+    if (fs.existsSync(cachedPath)) {
+      log('[CIK API] Using persistent cached CIK:', cachedPath);
+      return cachedPath;
+    }
+
     // Download CIK file (may be base64-encoded JSON or raw binary)
     const cikUrl = `${CIK_API_URL.replace(/\/+$/, '')}/cik/${cikGuid}`;
     log('[CIK API] Downloading CIK:', cikUrl);
@@ -436,10 +479,15 @@ async function fetchCikForProduct(productId) {
       log('[CIK API] Using raw CIK bytes:', cikBuf.length, 'bytes');
     }
 
-    const cikPath = path.join(app.getPath('temp'), cikGuid + '.cik');
-    fs.writeFileSync(cikPath, cikBuf);
-    log('[CIK API] Written CIK:', cikPath, '(' + cikBuf.length, 'bytes)');
-    return cikPath;
+    // Strip 16-byte GUID header if present (48 → 32 bytes)
+    if (cikBuf.length === 48) {
+      cikBuf = cikBuf.slice(16);
+      log('[CIK API] Stripped GUID header, now:', cikBuf.length, 'bytes');
+    }
+
+    fs.writeFileSync(cachedPath, cikBuf);
+    log('[CIK API] Written CIK to persistent cache:', cachedPath, '(' + cikBuf.length, 'bytes)');
+    return cachedPath;
   } catch (e) {
     log('[CIK API] Error:', e.message);
     return null;
@@ -449,18 +497,22 @@ async function fetchCikForProduct(productId) {
 function runExtraction(url, extractDir, gameId) {
   (async () => {
     try {
+      const t0 = Date.now();
       log('[download_file] Starting XvdTool extraction...');
 
       // Fetch CIK for this game from remote API (if configured)
+      const t1 = Date.now();
       const cikPath = await fetchCikForProduct(gameId);
-      if (cikPath) log('[download_file] Using CIK:', cikPath);
+      const t2 = Date.now();
+      if (cikPath) log('[download_file] Using CIK:', cikPath, '| fetch time:', (t2-t1)+'ms');
 
       await extractMsixvc(url, extractDir, (pct) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('download_progress', { gameId, receivedBytes: pct, totalBytes: 100, speed: 0 });
         }
       }, cikPath);
-      log('[download_file] Extraction completed successfully');
+      const t3 = Date.now();
+      log('[download_file] Extraction completed successfully | total time:', (t3-t0)+'ms, CIK fetch:', (t2-t1)+'ms, XvdTool:', (t3-t2)+'ms');
 
       // Copy OnlineFix files
       log('[download_file] Copying OnlineFix files...');
