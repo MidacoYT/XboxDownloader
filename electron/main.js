@@ -2,31 +2,36 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const https = require('https');
 const fs = require('fs');
-const { spawn, execSync } = require('child_process');
+const { spawn } = require('child_process');
 
 
 
 let mainWindow = null;
 
-// --- Admin elevation ---
-function isAdmin() {
-  try { execSync('net session', { stdio: 'ignore' }); return true; }
-  catch { return false; }
-}
-
 function toggleDeveloperMode(enable) {
   const val = enable ? '1' : '0';
+  const key = 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AppModelUnlock';
   return new Promise((resolve, reject) => {
-    const proc = spawn('reg', ['add', 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AppModelUnlock', '/t', 'REG_DWORD', '/v', 'AllowDevelopmentWithoutDevLicense', '/d', val, '/f']);
-    proc.on('close', (code) => code === 0 ? resolve() : reject(new Error(`reg add exited with code ${code}`)));
+    // Try direct first, fall back to elevated if access denied
+    const tryReg = (elevate) => {
+      const args = elevate
+        ? ['-Command', `Start-Process reg -ArgumentList 'add ${key} /t REG_DWORD /v AllowDevelopmentWithoutDevLicense /d ${val} /f' -Verb RunAs -Wait`]
+        : ['add', key, '/t', 'REG_DWORD', '/v', 'AllowDevelopmentWithoutDevLicense', '/d', val, '/f'];
+      const cmd = elevate ? 'powershell' : 'reg';
+      const proc = spawn(cmd, args);
+      let err = '';
+      proc.stderr?.on('data', (c) => err += c.toString());
+      proc.on('close', (code) => {
+        if (code === 0) resolve();
+        else if (!elevate) tryReg(true); // retry elevated
+        else reject(new Error(err.trim() || `reg add exited with code ${code}`));
+      });
+    };
+    tryReg(false);
   });
 }
 
-if (!isAdmin()) {
-  const args = process.argv.slice(1).map(a => `"${a.replace(/"/g, '`"')}"`).join(' ');
-  spawn('powershell', ['-Command', `Start-Process -FilePath "${process.execPath}" -ArgumentList "${args}" -Verb RunAs`], { detached: true, stdio: 'ignore' });
-  app.whenReady().then(() => setTimeout(() => app.quit(), 500));
-}
+
 const isDev = !app.isPackaged;
 const xvdToolPath = path.join(isDev ? path.dirname(__dirname) : process.resourcesPath, 'Xvd', 'XvdTool.Streaming.exe');
 const onlineFixDir = path.join(isDev ? path.dirname(__dirname) : process.resourcesPath, 'OnlineFix');
