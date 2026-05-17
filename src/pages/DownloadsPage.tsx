@@ -216,26 +216,45 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                     </div>
 
                     {/* Progress */}
-                    <div style={{ marginBottom: '8px' }}>
+                      <div style={{ marginBottom: '8px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                         <span style={{ fontSize: '0.72rem', color: extractingIds[game.id] === 'error' ? '#f87171' : '#a855f7', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                           {extractingIds[game.id] === 'extracting' ? (
-                            <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Extracting...</>
+                            game.id in downloadingIds ? (
+                              <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Downloading...</>
+                            ) : (
+                              <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Extracting...</>
+                            )
                           ) : extractingIds[game.id] === 'error' ? (
                             <><span style={{ width: '11px', height: '11px', borderRadius: '50%', background: '#f87171', display: 'inline-block' }} /> Download failed</>
                           ) : (
                             <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Downloading in progress</>
                           )}
                         </span>
+                        {extractingIds[game.id] === 'extracting' && game.id in downloadingIds && (
+                          <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {downloadProgressMap[game.id]?.speed > 0 && (
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{formatSpeed(downloadProgressMap[game.id].speed)}</span>
+                            )}
+                            <span>{Math.round(progress)}%</span>
+                          </span>
+                        )}
                       </div>
                       <div style={{ height: '6px', background: 'var(--border-color)', borderRadius: '3px', overflow: 'hidden', position: 'relative' }}>
                         {extractingIds[game.id] === 'extracting' ? (
-                          <div style={{
-                            height: '100%', width: '25%',
-                            borderRadius: '3px',
-                            background: 'linear-gradient(90deg, #7c3aed, #a855f7, #7c3aed)',
-                            animation: 'loading-bar 1.8s ease-in-out infinite',
-                          }} />
+                          game.id in downloadingIds ? (
+                            <div className="download-bar" style={{
+                              height: '100%', width: `${progress}%`,
+                              borderRadius: '3px', transition: 'width 0.5s ease',
+                            }} />
+                          ) : (
+                            <div style={{
+                              height: '100%', width: '25%',
+                              borderRadius: '3px',
+                              background: 'linear-gradient(90deg, #7c3aed, #a855f7, #7c3aed)',
+                              animation: 'loading-bar 1.8s ease-in-out infinite',
+                            }} />
+                          )
                         ) : extractingIds[game.id] === 'error' ? (
                           <div style={{ height: '100%', width: '100%', borderRadius: '3px', background: '#ef4444' }} />
                         ) : (
