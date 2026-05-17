@@ -562,7 +562,7 @@ function runExtraction(url, extractDir, gameId, gameSize) {
       if (cikPath) log('[download_file] Using CIK:', cikPath, '| fetch time:', (t2-t1)+'ms');
 
       // Sliding-window speed tracking (like Spectre.Console)
-      const speedSamples: { time: number; bytes: number }[] = [];
+      const speedSamples = [];
       const SPEED_WINDOW_MS = 3000;
 
       await extractMsixvc(url, extractDir, (pct) => {
