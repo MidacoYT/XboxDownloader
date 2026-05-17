@@ -456,10 +456,10 @@ async function fetchCikForProduct(productId) {
     // Use a lock file to prevent concurrent writes from pre-fetch + on-demand
     const lockPath = cachedPath + '.lock';
 
-    // Check persistent cache first — must be exactly 48 bytes (16-byte GUID + 32-byte key)
+    // Check persistent cache first — must be exactly 32 bytes (AES-256 key)
     if (fs.existsSync(cachedPath)) {
       const stat = fs.statSync(cachedPath);
-      if (stat.size === 48) {
+      if (stat.size === 32) {
         log('[CIK API] Using persistent cached CIK:', cachedPath);
         return cachedPath;
       }
@@ -478,7 +478,7 @@ async function fetchCikForProduct(productId) {
         // If file appeared while waiting, use it
         if (fs.existsSync(cachedPath)) {
           const stat = fs.statSync(cachedPath);
-          if (stat.size === 48) { return cachedPath; }
+          if (stat.size === 32) { return cachedPath; }
         }
       }
     }
@@ -487,7 +487,7 @@ async function fetchCikForProduct(productId) {
       // Double-check after lock acquisition (pre-fetch may have written it)
       if (fs.existsSync(cachedPath)) {
         const stat = fs.statSync(cachedPath);
-        if (stat.size === 48) { return cachedPath; }
+        if (stat.size === 32) { return cachedPath; }
       }
 
       // Download CIK file (may be base64-encoded JSON or raw binary)
@@ -511,12 +511,15 @@ async function fetchCikForProduct(productId) {
         log('[CIK API] Using raw CIK bytes:', cikBuf.length, 'bytes');
       }
 
-      // Validate size — XvdTool -k expects 48 bytes (16-byte GUID + 32-byte key)
-      if (cikBuf.length !== 48 && cikBuf.length !== 32) {
-        log('[CIK API] Unexpected CIK size:', cikBuf.length, 'bytes — expected 48 or 32');
+      // Strip 16-byte GUID header if present — -c expects 32 bytes (AES-256 key only)
+      if (cikBuf.length === 48) {
+        cikBuf = cikBuf.slice(16);
+        log('[CIK API] Stripped GUID header, now:', cikBuf.length, 'bytes');
+      }
+      if (cikBuf.length !== 32) {
+        log('[CIK API] Unexpected CIK size:', cikBuf.length, 'bytes — expected 32');
         return null;
       }
-      // Keep full 48 bytes for -k mode; -k reads GUID header to match key ID
 
       fs.writeFileSync(cachedPath, cikBuf);
       log('[CIK API] Written CIK to persistent cache:', cachedPath, '(' + cikBuf.length, 'bytes)');
@@ -618,9 +621,8 @@ function extractMsixvc(input, outputDir, onProgress = () => {}, cikPath) {
 
     const args = ['extract', input, '-o', outputDir, '-n'];
     if (cikPath && fs.existsSync(cikPath)) {
-      // Use -k (folder) — XvdTool auto-selects the matching key from key ID in the stream
-      args.push('-k', cikCacheDir);
-      log('[XvdTool] Added CIK folder via -k:', cikCacheDir);
+      args.push('-c', cikPath);
+      log('[XvdTool] Added CIK via -c:', cikPath);
     }
     log('[XvdTool] Cmd:', xvdToolPath, args.join(' '));
     log('[XvdTool] CWD:', xvdDir);
