@@ -91,7 +91,7 @@ export class DownloadService {
 
       const downloadPath = customPath || (await SettingsService.getSettings()).downloadPath || 'C:\\Xbox Games\\';
 
-      const result = await window.electronAPI.downloadFile(response.downloadUrl, downloadPath, productId, gameName);
+      const result = await window.electronAPI.downloadFile(response.downloadUrl, downloadPath, productId, gameName, response.size);
 
       return {
         success: result.success,

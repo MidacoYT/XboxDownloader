@@ -13,10 +13,11 @@ interface LibraryPageProps {
   onOpenFolder?: (game: Game) => void;
   onRefresh?: () => Promise<void>;
   downloadingIds: Record<string, number>;
+  downloadSpeeds?: Record<string, number>;
 }
 
 const LibraryPage: React.FC<LibraryPageProps> = ({
-  installedGames, onDownload, onUpdate, onUninstall, onPlay, onDetails, onOpenFolder, onRefresh, downloadingIds
+  installedGames, onDownload, onUpdate, onUninstall, onPlay, onDetails, onOpenFolder, onRefresh, downloadingIds, downloadSpeeds
 }) => {
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState('title');
@@ -186,6 +187,7 @@ const LibraryPage: React.FC<LibraryPageProps> = ({
                onOpenFolder={onOpenFolder}
                downloading={game.id in downloadingIds}
                progress={downloadingIds[game.id] || 0}
+               speed={downloadSpeeds?.[game.id] || 0}
             />
           ))}
         </div>

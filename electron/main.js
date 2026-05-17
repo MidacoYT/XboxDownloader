@@ -2,9 +2,29 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const https = require('https');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 
 let mainWindow = null;
+
+// --- Admin elevation ---
+function isAdmin() {
+  try { execSync('net session', { stdio: 'ignore' }); return true; }
+  catch { return false; }
+}
+
+function toggleDeveloperMode(enable) {
+  const val = enable ? '1' : '0';
+  return new Promise((resolve, reject) => {
+    const proc = spawn('reg', ['add', 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AppModelUnlock', '/t', 'REG_DWORD', '/v', 'AllowDevelopmentWithoutDevLicense', '/d', val, '/f']);
+    proc.on('close', (code) => code === 0 ? resolve() : reject(new Error(`reg add exited with code ${code}`)));
+  });
+}
+
+if (!isAdmin()) {
+  const args = process.argv.slice(1).map(a => `"${a.replace(/"/g, '`"')}"`).join(' ');
+  spawn('powershell', ['-Command', `Start-Process -FilePath "${process.execPath}" -ArgumentList "${args}" -Verb RunAs`], { detached: true, stdio: 'ignore' });
+  app.whenReady().then(() => setTimeout(() => app.quit(), 500));
+}
 const isDev = !app.isPackaged;
 const xvdToolPath = path.join(isDev ? path.dirname(__dirname) : process.resourcesPath, 'Xvd', 'XvdTool.Streaming.exe');
 const onlineFixDir = path.join(isDev ? path.dirname(__dirname) : process.resourcesPath, 'OnlineFix');
@@ -379,8 +399,8 @@ ipcMain.handle('open_folder_dialog', async () => {
 });
 
 // IPC Handler - Download & extract directly via XvdTool streaming
-ipcMain.handle('download_file', async (event, { url, downloadPath, gameId, gameName }) => {
-  log('[download_file] START gameId:', gameId, '| name:', gameName, '| path:', downloadPath);
+ipcMain.handle('download_file', async (event, { url, downloadPath, gameId, gameName, gameSize }) => {
+  log('[download_file] START gameId:', gameId, '| name:', gameName, '| size:', gameSize, '| path:', downloadPath);
 
   if (!url || typeof url !== 'string') { log('[download_file] Invalid URL'); throw new Error('Invalid URL'); }
   if (!downloadPath || typeof downloadPath !== 'string') { log('[download_file] Invalid path'); throw new Error('Invalid download path'); }
@@ -406,7 +426,7 @@ ipcMain.handle('download_file', async (event, { url, downloadPath, gameId, gameN
   }
 
   // Run extraction asynchronously (fire-and-forget), return immediately
-  runExtraction(url, extractDir, gameId);
+  runExtraction(url, extractDir, gameId, gameSize);
   return { success: true, extractDir };
 });
 
@@ -529,7 +549,7 @@ async function fetchCikForProduct(productId) {
   }
 }
 
-function runExtraction(url, extractDir, gameId) {
+function runExtraction(url, extractDir, gameId, gameSize) {
   (async () => {
     try {
       const t0 = Date.now();
@@ -541,9 +561,23 @@ function runExtraction(url, extractDir, gameId) {
       const t2 = Date.now();
       if (cikPath) log('[download_file] Using CIK:', cikPath, '| fetch time:', (t2-t1)+'ms');
 
+      // Track speed: percentage → estimated bytes
+      let lastPct = 0;
+      let lastTime = Date.now();
+
       await extractMsixvc(url, extractDir, (pct) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('download_progress', { gameId, receivedBytes: pct, totalBytes: 100, speed: 0 });
+          const now = Date.now();
+          const deltaPct = pct - lastPct;
+          const deltaSec = (now - lastTime) / 1000;
+          let speed = 0;
+          if (deltaPct > 0 && deltaSec > 0 && gameSize > 0) {
+            // gameSize is in bytes; each % is gameSize/100 bytes
+            speed = Math.round((deltaPct / 100 * gameSize) / deltaSec);
+          }
+          lastPct = pct;
+          lastTime = now;
+          mainWindow.webContents.send('download_progress', { gameId, receivedBytes: pct, totalBytes: 100, speed });
         }
       }, cikPath);
       const t3 = Date.now();
@@ -564,6 +598,8 @@ function runExtraction(url, extractDir, gameId) {
       const manifest = path.join(extractDir, 'appxmanifest.xml');
       if (fs.existsSync(manifest)) {
         try {
+          log('[download_file] Enabling Developer Mode...');
+          await toggleDeveloperMode(true);
           await new Promise((resolve, reject) => {
             const proc = spawn(path.join(extractDir, 'wdapp.exe'), ['register', manifest], {
               stdio: ['ignore', 'pipe', 'pipe'], cwd: extractDir,
@@ -575,6 +611,7 @@ function runExtraction(url, extractDir, gameId) {
           });
           log('[download_file] Game registered successfully');
         } catch (e) { log('[download_file] Register failed:', e.message); }
+        try { await toggleDeveloperMode(false); log('[download_file] Developer Mode disabled'); } catch {}
       } else {
         log('[download_file] No appxmanifest.xml found, skipping register');
       }

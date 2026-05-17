@@ -11,11 +11,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('get_package_info', productId);
   },
   openFolderDialog: () => ipcRenderer.invoke('open_folder_dialog'),
-  downloadFile: (url, downloadPath, gameId, gameName) => {
+  downloadFile: (url, downloadPath, gameId, gameName, gameSize) => {
     if (typeof url !== 'string' || !url) return Promise.reject(new Error('Invalid URL'));
     if (typeof downloadPath !== 'string' || !downloadPath) return Promise.reject(new Error('Invalid download path'));
     if (typeof gameId !== 'string' || !gameId) return Promise.reject(new Error('Invalid gameId'));
-    return ipcRenderer.invoke('download_file', { url, downloadPath, gameId, gameName });
+    return ipcRenderer.invoke('download_file', { url, downloadPath, gameId, gameName, gameSize });
   },
   onDownloadProgress: (callback) => {
     ipcRenderer.on('download_progress', (_event, data) => callback(data));

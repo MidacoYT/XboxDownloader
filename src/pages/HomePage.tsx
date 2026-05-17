@@ -12,6 +12,7 @@ interface HomePageProps {
   onPlay: (game: Game) => void;
   onDetails: (game: Game) => void;
   downloadingIds: Record<string, number>;
+  downloadSpeeds?: Record<string, number>;
   setActiveTab: (tab: any) => void;
 }
 
@@ -36,7 +37,7 @@ function processQueue() {
 
 const HomePage: React.FC<HomePageProps> = ({
   games,
-  onDownload, onUpdate, onUninstall, onPlay, onDetails, downloadingIds, setActiveTab
+  onDownload, onUpdate, onUninstall, onPlay, onDetails, downloadingIds, downloadSpeeds, setActiveTab
 }) => {
   useEffect(() => {
     if (timer) clearTimeout(timer);
@@ -193,6 +194,7 @@ const HomePage: React.FC<HomePageProps> = ({
                 onPlay={onPlay} onDetails={onDetails}
                 downloading={game.id in downloadingIds}
                 progress={downloadingIds[game.id] || 0}
+                speed={downloadSpeeds?.[game.id] || 0}
               />
             ))}
           </div>
@@ -216,6 +218,7 @@ const HomePage: React.FC<HomePageProps> = ({
               onPlay={onPlay} onDetails={onDetails}
               downloading={game.id in downloadingIds}
               progress={downloadingIds[game.id] || 0}
+              speed={downloadSpeeds?.[game.id] || 0}
             />
           ))}
         </div>

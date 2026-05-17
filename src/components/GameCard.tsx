@@ -33,6 +33,7 @@ interface GameCardProps {
   onOpenFolder?: (game: Game) => void;
   downloading?: boolean;
   progress?: number;
+  speed?: number;
 }
 
 const GameCard: React.FC<GameCardProps> = ({
@@ -45,8 +46,17 @@ const GameCard: React.FC<GameCardProps> = ({
   onOpenFolder,
   downloading = false,
   progress = 0,
+  speed = 0,
 }) => {
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
+
+  const formatSpeed = (bps: number) => {
+    if (bps <= 0) return '';
+    if (bps > 1024 * 1024 * 1024) return `${(bps / (1024 * 1024 * 1024)).toFixed(1)} GB/s`;
+    if (bps > 1024 * 1024) return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
+    if (bps > 1024) return `${(bps / 1024).toFixed(0)} KB/s`;
+    return `${bps} B/s`;
+  };
 
   const handleDownload = async () => {
     setShowDownloadDialog(true);
@@ -431,7 +441,10 @@ const GameCard: React.FC<GameCardProps> = ({
                 <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
                 Downloading...
               </span>
-              <span style={{ color: 'var(--text-secondary)' }}>{Math.round(progress)}%</span>
+              <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {speed > 0 && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{formatSpeed(speed)}</span>}
+                <span>{Math.round(progress)}%</span>
+              </span>
             </div>
             <div style={{ height: '6px', background: 'var(--border-color)', borderRadius: '3px', overflow: 'hidden' }}>
               <div

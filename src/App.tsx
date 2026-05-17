@@ -29,6 +29,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const [gameList, setGameList] = useState<Game[]>([]);
   const [downloadingIds, setDownloadingIds] = useState<Record<string, number>>({});
+  const [downloadSpeeds, setDownloadSpeeds] = useState<Record<string, number>>({});
   const [completedDownloads, setCompletedDownloads] = useState<string[]>([]);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -137,12 +138,13 @@ export default function App() {
 
   useEffect(() => {
     window.electronAPI?.onConsoleLog((msg) => console.log('[main]', msg));
-    window.electronAPI?.onDownloadProgress(({ gameId, receivedBytes, totalBytes }) => {
+    window.electronAPI?.onDownloadProgress(({ gameId, receivedBytes, totalBytes, speed }) => {
       setDownloadingIds(prev => {
         if (!(gameId in prev)) return prev;
         const pct = totalBytes > 0 ? Math.round((receivedBytes / totalBytes) * 100) : 50;
         return { ...prev, [gameId]: Math.min(pct, 99) };
       });
+      if (speed > 0) setDownloadSpeeds(prev => ({ ...prev, [gameId]: speed }));
     });
     window.electronAPI?.onExtractProgress(({ gameId, status, error }) => {
       if (status === 'extracting') {
@@ -307,6 +309,7 @@ export default function App() {
             onPlay={handlePlay}
             onDetails={handleDetails}
             downloadingIds={downloadingIds}
+            downloadSpeeds={downloadSpeeds}
             setActiveTab={setActiveTab}
           />
         );
@@ -321,6 +324,7 @@ export default function App() {
               onPlay={handlePlay}
             onDetails={handleDetails}
             downloadingIds={downloadingIds}
+            downloadSpeeds={downloadSpeeds}
           />
           </Suspense>
         );
@@ -336,6 +340,7 @@ export default function App() {
             onOpenFolder={handleOpenFolder}
             onRefresh={handleRefreshLibrary}
             downloadingIds={downloadingIds}
+            downloadSpeeds={downloadSpeeds}
           />
         );
       case 'downloads':

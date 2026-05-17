@@ -30,10 +30,11 @@ interface StorePageProps {
   onPlay: (game: Game) => void;
   onDetails: (game: Game) => void;
   downloadingIds: Record<string, number>;
+  downloadSpeeds?: Record<string, number>;
 }
 
 const StorePage: React.FC<StorePageProps> = ({
-  games, onDownload, onUpdate, onUninstall, onPlay, onDetails, downloadingIds
+  games, onDownload, onUpdate, onUninstall, onPlay, onDetails, downloadingIds, downloadSpeeds
 }) => {
   const [localSearch, setLocalSearch] = useState('');
   const [sortBy, setSortBy] = useState('title');
@@ -201,6 +202,7 @@ const StorePage: React.FC<StorePageProps> = ({
               onDetails={onDetails}
               downloading={game.id in downloadingIds}
               progress={downloadingIds[game.id] || 0}
+              speed={downloadSpeeds?.[game.id] || 0}
             />
           ))}
         </div>
