@@ -4,6 +4,9 @@ const https = require('https');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 
+// Disable GPU acceleration to avoid command buffer errors
+app.commandLine.appendSwitch('disable-gpu');
+
 let mainWindow = null;
 
 // --- Admin elevation ---
