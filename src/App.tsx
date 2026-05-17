@@ -148,7 +148,7 @@ export default function App() {
     });
     window.electronAPI?.onExtractProgress(({ gameId, status, error }) => {
       if (status === 'extracting') {
-        setDownloadingIds(prev => { const n = { ...prev }; delete n[gameId]; return n; });
+        // Keep in downloadingIds so progress/updates keep flowing (XvdTool streams + extracts simultaneously)
         setExtractingIds(prev => ({ ...prev, [gameId]: 'extracting' }));
       } else if (status === 'done') {
         setDownloadingIds(prev => { const n = { ...prev }; delete n[gameId]; return n; });
