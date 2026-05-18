@@ -48,6 +48,12 @@ interface ElectronAPI {
     releaseNotes?: string;
   }>;
   downloadAppUpdate: (url: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Pause / Resume / Cancel
+  pauseDownload: (gameId: string) => Promise<{ success: boolean; error?: string }>;
+  resumeDownload: (gameId: string) => Promise<{ success: boolean; error?: string }>;
+  cancelDownload: (gameId: string) => Promise<{ success: boolean; error?: string }>;
+  onDownloadPaused: (callback: (data: { gameId: string }) => void) => void;
 }
 
 declare global {

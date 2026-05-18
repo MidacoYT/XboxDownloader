@@ -1,21 +1,25 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Download, X, CheckCircle, Clock, HardDrive, Loader2, Zap, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
+import { Download, X, CheckCircle, Clock, HardDrive, Loader2, Zap, ChevronDown, ChevronUp, AlertTriangle, Pause, Play } from 'lucide-react';
 import { Game } from '../data/games';
 
 interface DownloadItem {
   game: Game;
   progress: number;
+  paused?: boolean;
 }
 
 interface DownloadsPageProps {
   downloadingIds: Record<string, number>;
   allGames: Game[];
   onCancelDownload: (gameId: string) => void;
+  onPauseDownload: (gameId: string) => void;
+  onResumeDownload: (gameId: string) => void;
   completedDownloads: string[];
   downloadProgressMap?: Record<string, { receivedBytes: number; totalBytes: number; speed: number }>;
   downloadSpeeds?: Record<string, number>;
   extractingIds?: Record<string, string>;
   extractErrors?: Record<string, string>;
+  pausedDownloads?: Record<string, number>;
 }
 
 const ErrorBadge: React.FC<{ error?: string }> = ({ error }) => {
@@ -76,7 +80,6 @@ const formatEta = (remainingBytes: number, speed: number): string => {
   return `~${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 };
 
-// Smoothly animates toward a target value using requestAnimationFrame (like Spectre.Console's smooth rendering)
 const SmoothValue: React.FC<{ target: number; children: (value: number) => React.ReactNode }> = ({ target, children }) => {
   const [displayed, setDisplayed] = useState(target);
   const targetRef = useRef(target);
@@ -88,7 +91,6 @@ const SmoothValue: React.FC<{ target: number; children: (value: number) => React
       setDisplayed(prev => {
         const t = targetRef.current;
         if (Math.abs(prev - t) < 0.05) return t;
-        // Lerp 15% of the way per frame (~60fps, reaches 95% in ~20 frames = 330ms)
         return prev + (t - prev) * 0.15;
       });
       rafRef.current = requestAnimationFrame(animate);
@@ -104,11 +106,14 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
   downloadingIds,
   allGames,
   onCancelDownload,
+  onPauseDownload,
+  onResumeDownload,
   completedDownloads,
   downloadProgressMap = {},
   downloadSpeeds = {},
   extractingIds = {},
   extractErrors = {},
+  pausedDownloads = {},
 }) => {
   const activeDownloads: DownloadItem[] = [
     ...Object.entries(downloadingIds).map(([id, progress]) => ({
@@ -116,13 +121,22 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
       progress,
     })),
     ...Object.entries(extractingIds)
-      .filter(([id]) => !(id in downloadingIds))
+      .filter(([id]) => !(id in downloadingIds) && !(id in pausedDownloads))
       .map(([id]) => ({
         game: allGames.find(g => g.id === id)!,
         progress: 100,
       })),
   ].filter(d => d.game);
 
+  const pausedList: DownloadItem[] = Object.entries(pausedDownloads)
+    .map(([id, progress]) => ({
+      game: allGames.find(g => g.id === id)!,
+      progress,
+      paused: true,
+    }))
+    .filter(d => d.game);
+
+  const totalActive = activeDownloads.length + pausedList.length;
   const completed = allGames.filter(g => completedDownloads.includes(g.id));
 
   return (
@@ -134,18 +148,18 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
           Downloads
         </h1>
         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-          {activeDownloads.length} download{activeDownloads.length !== 1 ? 's' : ''} in progress
+          {totalActive} download{totalActive !== 1 ? 's' : ''} in progress
         </p>
       </div>
 
       {/* Active downloads */}
       <section>
         <h2 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Loader2 size={16} style={{ color: '#a855f7', animation: activeDownloads.length > 0 ? 'spin 1s linear infinite' : 'none' }} />
-          In Progress ({activeDownloads.length})
+          <Loader2 size={16} style={{ color: '#a855f7', animation: totalActive > 0 ? 'spin 1s linear infinite' : 'none' }} />
+          In Progress ({totalActive})
         </h2>
 
-        {activeDownloads.length === 0 ? (
+        {totalActive === 0 ? (
           <div style={{
             padding: '40px 20px',
             textAlign: 'center',
@@ -163,28 +177,32 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {activeDownloads.map(({ game, progress }) => (
+            {[...activeDownloads, ...pausedList].map(({ game, progress, paused }) => (
               <div
                 key={game.id}
                 style={{
                   padding: '16px',
                   borderRadius: '14px',
                   background: 'var(--bg-card)',
-                  border: '1px solid rgba(124, 58, 237, 0.2)',
+                  border: paused
+                    ? '1px solid rgba(234, 179, 8, 0.25)'
+                    : '1px solid rgba(124, 58, 237, 0.2)',
                   overflow: 'hidden',
                   position: 'relative',
                 }}
               >
-                {/* Background shimmer */}
-                <div
-                  className="shimmer-bg"
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    borderRadius: '14px',
-                    pointerEvents: 'none',
-                  }}
-                />
+                {/* Background shimmer (only for active) */}
+                {!paused && (
+                  <div
+                    className="shimmer-bg"
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      borderRadius: '14px',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                )}
 
                 <div style={{ position: 'relative', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                   {/* Cover */}
@@ -196,8 +214,8 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                   />
 
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    {/* Title & cancel */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+                    {/* Title & action buttons */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px', gap: '8px', flexWrap: 'wrap' }}>
                       <div>
                         <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
                           {game.title}
@@ -206,107 +224,148 @@ const DownloadsPage: React.FC<DownloadsPageProps> = ({
                           {game.developer}
                         </div>
                       </div>
-                      {!extractingIds[game.id] ? (
-                        <button
-                          onClick={() => onCancelDownload(game.id)}
-                          className="btn-danger"
-                          style={{
-                            padding: '5px 8px',
-                            borderRadius: '8px',
-                            fontSize: '0.7rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            cursor: 'pointer',
-                            flexShrink: 0,
-                          }}
-                        >
-                          <X size={12} />
-                          Cancel
-                        </button>
-                      ) : extractingIds[game.id] === 'error' ? (
-                        <ErrorBadge error={extractErrors[game.id]} />
-                      ) : (
-                        <span style={{
-                          padding: '5px 8px',
-                          borderRadius: '8px',
-                          fontSize: '0.7rem',
-                          fontWeight: 600,
-                          color: '#a855f7',
-                          background: 'rgba(124,58,237,0.1)',
-                          flexShrink: 0,
-                        }}>
-                          Downloading...
-                        </span>
-                      )}
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0, flexWrap: 'wrap' }}>
+                        {paused ? (
+                          <>
+                            <button
+                              onClick={() => onResumeDownload(game.id)}
+                              className="btn-primary"
+                              style={{
+                                padding: '5px 10px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 600,
+                                display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer',
+                                color: '#22c55e', background: 'rgba(34,197,94,0.1)',
+                                border: '1px solid rgba(34,197,94,0.25)',
+                                transition: 'all 0.2s ease',
+                              }}
+                            >
+                              <Play size={11} />
+                              Resume
+                            </button>
+                            <button
+                              onClick={() => onCancelDownload(game.id)}
+                              className="btn-danger"
+                              style={{
+                                padding: '5px 8px', borderRadius: '8px', fontSize: '0.7rem',
+                                display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer',
+                              }}
+                            >
+                              <X size={12} />
+                              Cancel
+                            </button>
+                          </>
+                        ) : extractingIds[game.id] === 'error' ? (
+                          <ErrorBadge error={extractErrors[game.id]} />
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => onPauseDownload(game.id)}
+                              style={{
+                                padding: '5px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 600,
+                                display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer',
+                                color: '#eab308', background: 'rgba(234,179,8,0.1)',
+                                border: '1px solid rgba(234,179,8,0.25)',
+                                transition: 'all 0.2s ease',
+                              }}
+                            >
+                              <Pause size={11} />
+                              Pause
+                            </button>
+                            <button
+                              onClick={() => onCancelDownload(game.id)}
+                              className="btn-danger"
+                              style={{
+                                padding: '5px 8px', borderRadius: '8px', fontSize: '0.7rem',
+                                display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer',
+                              }}
+                            >
+                              <X size={12} />
+                              Cancel
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
 
                     {/* Progress */}
+                    {paused ? (
                       <div style={{ marginBottom: '8px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                        <span style={{ fontSize: '0.72rem', color: extractingIds[game.id] === 'error' ? '#f87171' : '#a855f7', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                          <span style={{ fontSize: '0.72rem', color: '#eab308', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Pause size={11} />
+                            Paused
+                          </span>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                            <SmoothValue target={progress}>{v => <>{Math.round(v)}%</>}</SmoothValue>
+                          </span>
+                        </div>
+                        <div style={{ height: '6px', background: 'var(--border-color)', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{
+                            height: '100%', width: `${progress}%`,
+                            borderRadius: '3px', background: '#eab308',
+                          }} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                          <span style={{ fontSize: '0.72rem', color: extractingIds[game.id] === 'error' ? '#f87171' : '#a855f7', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            {extractingIds[game.id] === 'extracting' ? (
+                              <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Extracting...</>
+                            ) : extractingIds[game.id] === 'error' ? (
+                              <><span style={{ width: '11px', height: '11px', borderRadius: '50%', background: '#f87171', display: 'inline-block' }} /> Download failed</>
+                            ) : (
+                              <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Downloading in progress</>
+                            )}
+                          </span>
+                          {extractingIds[game.id] === 'extracting' && game.id in downloadingIds && (
+                            <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              {(() => {
+                                const spd = downloadProgressMap[game.id]?.speed || downloadSpeeds[game.id] || 0;
+                                return spd > 0 ? (
+                                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{formatSpeed(spd)}</span>
+                                ) : null;
+                              })()}
+                              <SmoothValue target={progress}>{v => <>{Math.round(v)}%</>}</SmoothValue>
+                            </span>
+                          )}
+                          {!extractingIds[game.id] && game.id in downloadingIds && (
+                            <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              {(() => {
+                                const spd = downloadProgressMap[game.id]?.speed || downloadSpeeds[game.id] || 0;
+                                return spd > 0 ? (
+                                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{formatSpeed(spd)}</span>
+                                ) : null;
+                              })()}
+                              <SmoothValue target={progress}>{v => <>{Math.round(v)}%</>}</SmoothValue>
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ height: '6px', background: 'var(--border-color)', borderRadius: '3px', overflow: 'hidden', position: 'relative' }}>
                           {extractingIds[game.id] === 'extracting' ? (
                             game.id in downloadingIds ? (
-                              <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Downloading...</>
+                              <div className="download-bar" style={{
+                                height: '100%', width: `${progress}%`,
+                                borderRadius: '3px', transition: 'width 0.5s ease',
+                              }} />
                             ) : (
-                              <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Extracting...</>
+                              <div style={{
+                                height: '100%', width: '25%',
+                                borderRadius: '3px',
+                                background: 'linear-gradient(90deg, #7c3aed, #a855f7, #7c3aed)',
+                                animation: 'loading-bar 1.8s ease-in-out infinite',
+                              }} />
                             )
                           ) : extractingIds[game.id] === 'error' ? (
-                            <><span style={{ width: '11px', height: '11px', borderRadius: '50%', background: '#f87171', display: 'inline-block' }} /> Download failed</>
+                            <div style={{ height: '100%', width: '100%', borderRadius: '3px', background: '#ef4444' }} />
                           ) : (
-                            <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Downloading in progress</>
-                          )}
-                        </span>
-                        {extractingIds[game.id] === 'extracting' && game.id in downloadingIds && (
-                          <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {(() => {
-                              const spd = downloadProgressMap[game.id]?.speed || downloadSpeeds[game.id] || 0;
-                              return spd > 0 ? (
-                                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{formatSpeed(spd)}</span>
-                              ) : null;
-                            })()}
-                            <SmoothValue target={progress}>{v => <>{Math.round(v)}%</>}</SmoothValue>
-                          </span>
-                        )}
-                        {!extractingIds[game.id] && game.id in downloadingIds && (
-                          <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {(() => {
-                              const spd = downloadProgressMap[game.id]?.speed || downloadSpeeds[game.id] || 0;
-                              return spd > 0 ? (
-                                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{formatSpeed(spd)}</span>
-                              ) : null;
-                            })()}
-                            <SmoothValue target={progress}>{v => <>{Math.round(v)}%</>}</SmoothValue>
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ height: '6px', background: 'var(--border-color)', borderRadius: '3px', overflow: 'hidden', position: 'relative' }}>
-                        {extractingIds[game.id] === 'extracting' ? (
-                          game.id in downloadingIds ? (
                             <div className="download-bar" style={{
                               height: '100%', width: `${progress}%`,
                               borderRadius: '3px', transition: 'width 0.5s ease',
                             }} />
-                          ) : (
-                            <div style={{
-                              height: '100%', width: '25%',
-                              borderRadius: '3px',
-                              background: 'linear-gradient(90deg, #7c3aed, #a855f7, #7c3aed)',
-                              animation: 'loading-bar 1.8s ease-in-out infinite',
-                            }} />
-                          )
-                        ) : extractingIds[game.id] === 'error' ? (
-                          <div style={{ height: '100%', width: '100%', borderRadius: '3px', background: '#ef4444' }} />
-                        ) : (
-                          <div className="download-bar" style={{
-                            height: '100%', width: `${progress}%`,
-                            borderRadius: '3px', transition: 'width 0.5s ease',
-                          }} />
-                        )}
+                          )}
+                        </div>
                       </div>
-                    </div>
-
-
+                    )}
                   </div>
                 </div>
               </div>

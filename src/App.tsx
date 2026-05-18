@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { Home, Store, Gamepad2, Download, RefreshCw, Settings as SettingsIcon, Play } from 'lucide-react';
 import { Game } from './data/games';
 import { xboxApi } from './services/xboxApi';
@@ -135,27 +135,46 @@ export default function App() {
   const [downloadProgressMap, setDownloadProgressMap] = useState<Record<string, { receivedBytes: number; totalBytes: number; speed: number }>>({});
   const [extractingIds, setExtractingIds] = useState<Record<string, string>>({});
   const [extractErrors, setExtractErrors] = useState<Record<string, string>>({});
+  const [pausedDownloads, setPausedDownloads] = useState<Record<string, number>>({});
+  const downloadingIdsRef = useRef(downloadingIds);
+  downloadingIdsRef.current = downloadingIds;
 
   useEffect(() => {
     window.electronAPI?.onConsoleLog((msg) => console.log('[main]', msg));
     window.electronAPI?.onDownloadProgress(({ gameId, receivedBytes, totalBytes, speed }) => {
+      console.log('[App:onDownloadProgress]', gameId, receivedBytes, totalBytes, speed);
+      if (receivedBytes >= totalBytes && totalBytes > 0) console.log('[App:onDownloadProgress] ===> 100% DETECTED', gameId);
       setDownloadingIds(prev => {
         if (!(gameId in prev)) return prev;
         const pct = totalBytes > 0 ? Math.round((receivedBytes / totalBytes) * 100) : 50;
-        return { ...prev, [gameId]: Math.min(pct, 99) };
+        console.log('[App:onDownloadProgress] pct:', pct);
+        if (pct >= 100) console.log('[App:onDownloadProgress] ===> SETTING 100% FOR', gameId);
+        return { ...prev, [gameId]: pct };
       });
       if (speed > 0) setDownloadSpeeds(prev => ({ ...prev, [gameId]: speed }));
       setDownloadProgressMap(prev => ({ ...prev, [gameId]: { receivedBytes, totalBytes, speed } }));
     });
+    window.electronAPI?.onDownloadPaused(({ gameId }) => {
+      const progress = downloadingIdsRef.current[gameId] || 50;
+      setDownloadingIds(prev => {
+        const n = { ...prev };
+        delete n[gameId];
+        return n;
+      });
+      setPausedDownloads(prev => ({ ...prev, [gameId]: progress }));
+    });
     window.electronAPI?.onExtractProgress(({ gameId, status, error }) => {
+      console.log('[App:onExtractProgress]', gameId, status, error);
       if (status === 'extracting') {
         setExtractingIds(prev => ({ ...prev, [gameId]: 'extracting' }));
         // Ensure game is in downloadingIds (in case onDownload's setState hasn't committed yet)
         setDownloadingIds(prev => {
           if (gameId in prev) return prev;
+          console.log('[App:onExtractProgress] adding game to downloadingIds:', gameId);
           return { ...prev, [gameId]: 0 };
         });
       } else if (status === 'done') {
+        console.log('[App:onExtractProgress] ===> EXTRACTION DONE FOR', gameId);
         setDownloadingIds(prev => { const n = { ...prev }; delete n[gameId]; return n; });
         setExtractingIds(prev => { const n = { ...prev }; delete n[gameId]; return n; });
         setDownloadProgressMap(prev => { const n = { ...prev }; delete n[gameId]; return n; });
@@ -168,11 +187,13 @@ export default function App() {
         );
         setCompletedDownloads(prev => prev.includes(gameId) ? prev : [...prev, gameId]);
       } else if (status === 'error') {
+        console.log('[App:onExtractProgress] ===> EXTRACTION ERROR FOR', gameId, error);
         setExtractingIds(prev => ({ ...prev, [gameId]: 'error' }));
         setExtractErrors(prev => ({ ...prev, [gameId]: event.error || 'Unknown error' }));
       }
     });
-    window.electronAPI?.onDownloadComplete(({ gameId, success }) => {
+    window.electronAPI?.onDownloadComplete(({ gameId, success, state }) => {
+      console.log('[App:onDownloadComplete]', gameId, success, state);
       if (success) {
         setDownloadingIds(prev => { const n = { ...prev }; delete n[gameId]; return n; });
         setDownloadProgressMap(prev => { const n = { ...prev }; delete n[gameId]; return n; });
@@ -185,6 +206,13 @@ export default function App() {
           )
         );
         setCompletedDownloads(prev => prev.includes(gameId) ? prev : [...prev, gameId]);
+      } else if (state === 'cancelled') {
+        // Cancelled by user — clean up all state
+        setDownloadingIds(prev => { const n = { ...prev }; delete n[gameId]; return n; });
+        setDownloadProgressMap(prev => { const n = { ...prev }; delete n[gameId]; return n; });
+        setExtractingIds(prev => { const n = { ...prev }; delete n[gameId]; return n; });
+        setPausedDownloads(prev => { const n = { ...prev }; delete n[gameId]; return n; });
+        setExtractErrors(prev => { const n = { ...prev }; delete n[gameId]; return n; });
       }
     });
   }, []);
@@ -288,11 +316,24 @@ export default function App() {
   }, []);
 
   const handleCancelDownload = useCallback((gameId: string) => {
-    setDownloadingIds(prev => {
-      const next = { ...prev };
-      delete next[gameId];
-      return next;
+    window.electronAPI?.cancelDownload(gameId);
+    // IPC handler will send download_complete with cancelled state which cleans up
+  }, []);
+
+  const handlePauseDownload = useCallback((gameId: string) => {
+    window.electronAPI?.pauseDownload(gameId);
+    // IPC handler will send download_paused which removes from downloadingIds
+  }, []);
+
+  const handleResumeDownload = useCallback((gameId: string) => {
+    setPausedDownloads(prev => {
+      const pct = prev[gameId] || 0;
+      const n = { ...prev };
+      delete n[gameId];
+      setDownloadingIds(d => ({ ...d, [gameId]: pct }));
+      return n;
     });
+    window.electronAPI?.resumeDownload(gameId);
   }, []);
 
   const installedGames = gameList.filter(g => g.installed);
@@ -354,11 +395,14 @@ export default function App() {
             downloadingIds={downloadingIds}
             allGames={gameList}
             onCancelDownload={handleCancelDownload}
+            onPauseDownload={handlePauseDownload}
+            onResumeDownload={handleResumeDownload}
             completedDownloads={completedDownloads}
             downloadProgressMap={downloadProgressMap}
             downloadSpeeds={downloadSpeeds}
             extractingIds={extractingIds}
             extractErrors={extractErrors}
+            pausedDownloads={pausedDownloads}
           />
         );
       case 'updates':

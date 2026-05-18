@@ -1,12 +1,17 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const https = require('https');
+const http = require('http');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
 
 
 let mainWindow = null;
+const activeProcesses = new Map(); // gameId -> ChildProcess (XvdTool)
+const pendingDownloads = new Map(); // gameId -> http.ClientRequest[] (parallel download requests)
+const downloadActions = new Map(); // gameId -> 'pause' | 'cancel'
+const downloadParams = new Map(); // gameId -> { url, extractDir, gameName, gameSize }
 
 function toggleDeveloperMode(enable) {
   const val = enable ? '1' : '0';
@@ -427,15 +432,182 @@ ipcMain.handle('download_file', async (event, { url, downloadPath, gameId, gameN
   log('[download_file] Output dir:', extractDir);
   fs.mkdirSync(extractDir, { recursive: true });
 
+  // Store params for potential pause/resume
+  downloadParams.set(gameId, { url, extractDir, gameName, gameSize });
+
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('download_progress', { gameId, receivedBytes: 0, totalBytes: 1, speed: 0 });
-    mainWindow.webContents.send('extract_progress', { gameId, status: 'extracting', filePath: url });
   }
 
   // Run extraction asynchronously (fire-and-forget), return immediately
   runExtraction(url, extractDir, gameId, gameSize);
   return { success: true, extractDir };
 });
+
+// IPC Handler - Pause download (abort parallel download or suspend process threads)
+ipcMain.handle('pause_download', async (event, gameId) => {
+  log('[pause_download] gameId:', gameId);
+
+  // Abort parallel download phase
+  const dlReqs = pendingDownloads.get(gameId);
+  if (dlReqs) {
+    downloadActions.set(gameId, 'pause');
+    dlReqs.forEach(r => { try { r.req.destroy(); } catch {} });
+    log('[pause_download] Aborted parallel download for', gameId);
+  }
+
+  // Suspend XvdTool process if in extraction phase
+  const proc = activeProcesses.get(gameId);
+  if (proc) {
+    try {
+      await suspendResumeProcess(proc.pid, 'SuspendProcess');
+      log('[pause_download] Suspended process', proc.pid, 'for', gameId);
+    } catch (e) {
+      log('[pause_download] Suspend error:', e.message);
+    }
+  }
+
+  // If nothing was running, mark for future interruption
+  if (!dlReqs && !proc) {
+    downloadActions.set(gameId, 'pause');
+    log('[pause_download] No active download, marked for interruption');
+  }
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('download_paused', { gameId });
+  }
+  return { success: true };
+});
+
+// IPC Handler - Resume download (resume process threads, or restart if never started)
+ipcMain.handle('resume_download', async (event, gameId) => {
+  log('[resume_download] gameId:', gameId);
+
+  const proc = activeProcesses.get(gameId);
+  if (proc) {
+    try {
+      await suspendResumeProcess(proc.pid, 'ResumeProcess');
+      log('[resume_download] Resumed process', proc.pid, 'for', gameId);
+      return { success: true };
+    } catch (e) {
+      log('[resume_download] Resume error:', e.message);
+      // Process may have died — fall through to restart path
+    }
+  }
+
+  // Process already exited or never started — re-run extraction
+  const params = downloadParams.get(gameId);
+  if (params) {
+    log('[resume_download] Restarting extraction for', gameId);
+    fs.mkdirSync(params.extractDir, { recursive: true });
+    runExtraction(params.url, params.extractDir, gameId, params.gameSize);
+    return { success: true };
+  }
+
+  log('[resume_download] No saved params for', gameId);
+  return { success: false, error: 'No download state found' };
+});
+
+// IPC Handler - Cancel download
+ipcMain.handle('cancel_download', async (event, gameId) => {
+  log('[cancel_download] gameId:', gameId);
+
+  // Abort parallel download phase
+  const dlReqs = pendingDownloads.get(gameId);
+  if (dlReqs) {
+    downloadActions.set(gameId, 'cancel');
+    dlReqs.forEach(r => { try { r.req.destroy(); } catch {} });
+    log('[cancel_download] Aborted parallel download for', gameId);
+  }
+
+  // Kill XvdTool process if in extraction phase
+  const proc = activeProcesses.get(gameId);
+  if (proc) {
+    downloadActions.set(gameId, 'cancel');
+    proc.kill();
+    log('[cancel_download] Killed process for', gameId);
+  }
+
+  // Clean up partial extraction directory
+  const params = downloadParams.get(gameId);
+  if (params && params.extractDir) {
+    try {
+      if (fs.existsSync(params.extractDir)) {
+        fs.rmSync(params.extractDir, { recursive: true, force: true });
+        log('[cancel_download] Deleted partial dir:', params.extractDir);
+      }
+    } catch (e) {
+      log('[cancel_download] Cleanup error:', e.message);
+    }
+  }
+
+  downloadParams.delete(gameId);
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('download_complete', { gameId, success: false, state: 'cancelled' });
+  }
+  return { success: true };
+});
+
+// Suspend or resume a process via Windows API (PowerShell P/Invoke)
+function suspendResumeProcess(pid, action) {
+  return new Promise((resolve, reject) => {
+    const script =
+`$code = @'
+using System;
+using System.Runtime.InteropServices;
+public class ProcessUtil {
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr OpenThread(uint dwDesiredAccess, bool bInheritHandle, uint dwThreadId);
+    [DllImport("kernel32.dll")]
+    public static extern uint SuspendThread(IntPtr hThread);
+    [DllImport("kernel32.dll")]
+    public static extern int ResumeThread(IntPtr hThread);
+    [DllImport("kernel32.dll")]
+    public static extern void CloseHandle(IntPtr hHandle);
+
+    public static void SuspendProcess(int pid) {
+        try {
+            var p = System.Diagnostics.Process.GetProcessById(pid);
+            if (p == null || p.HasExited) return;
+            foreach (System.Diagnostics.ProcessThread t in p.Threads) {
+                var h = OpenThread(0x0002, false, (uint)t.Id);
+                if (h != IntPtr.Zero) { SuspendThread(h); CloseHandle(h); }
+            }
+        } catch {}
+    }
+
+    public static void ResumeProcess(int pid) {
+        try {
+            var p = System.Diagnostics.Process.GetProcessById(pid);
+            if (p == null || p.HasExited) return;
+            foreach (System.Diagnostics.ProcessThread t in p.Threads) {
+                var h = OpenThread(0x0002, false, (uint)t.Id);
+                if (h != IntPtr.Zero) { ResumeThread(h); CloseHandle(h); }
+            }
+        } catch {}
+    }
+}
+'@
+Add-Type -TypeDefinition $code
+[ProcessUtil]::${action}(${pid})
+`;
+    const tmpFile = path.join(app.getPath('temp'), `xbox_suspend_${pid}.ps1`);
+    try { fs.writeFileSync(tmpFile, script, 'utf8'); } catch (e) { reject(e); return; }
+    const child = spawn('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tmpFile]);
+    let err = '';
+    child.stderr?.on('data', (c) => err += c.toString());
+    child.on('close', (code) => {
+      try { fs.unlinkSync(tmpFile); } catch {}
+      if (code === 0) resolve();
+      else reject(new Error(`PowerShell ${action} (pid ${pid}) exited ${code}: ${err.trim()}`));
+    });
+    child.on('error', (e) => {
+      try { fs.unlinkSync(tmpFile); } catch {}
+      reject(e);
+    });
+  });
+}
 
 function httpGet(url, apiKey) {
   return new Promise((resolve, reject) => {
@@ -560,7 +732,7 @@ function runExtraction(url, extractDir, gameId, gameSize) {
   (async () => {
     try {
       const t0 = Date.now();
-      log('[download_file] Starting XvdTool extraction...');
+      log('[download_file] Starting extraction pipeline...');
 
       // Fetch CIK for this game from remote API (if configured)
       const t1 = Date.now();
@@ -568,43 +740,99 @@ function runExtraction(url, extractDir, gameId, gameSize) {
       const t2 = Date.now();
       if (cikPath) log('[download_file] Using CIK:', cikPath, '| fetch time:', (t2-t1)+'ms');
 
-      // Sliding-window speed tracking (matching Spectre.Console's ProgressTask)
-      const speedSamples = [{ time: Date.now(), bytes: 0 }]; // Start sample (value=0 at startTime)
-      const SPEED_WINDOW_MS = 30000; // Match Spectre.Console default (~30s)
+      // Shared speed-tracking helpers
+      const speedSamples = [{ time: Date.now(), bytes: 0 }];
+      const SPEED_WINDOW_MS = 30000;
       let lastKnownSpeed = 0;
-
-      await extractMsixvc(url, extractDir, (pct) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          const now = Date.now();
-          const receivedBytes = gameSize > 0 ? Math.round(pct / 100 * gameSize) : pct;
-          const totalBytes = gameSize > 0 ? gameSize : 100;
-
-          // Add sample to sliding window
-          speedSamples.push({ time: now, bytes: receivedBytes });
-          // Prune samples older than window
-          while (speedSamples.length > 1 && speedSamples[0].time < now - SPEED_WINDOW_MS) {
-            speedSamples.shift();
-          }
-
-          // Speed = (latest.bytes - earliest.bytes) / (latest.time - earliest.time) in bytes/s
-          let speed = lastKnownSpeed;
-          if (speedSamples.length >= 2) {
-            const first = speedSamples[0];
-            const last = speedSamples[speedSamples.length - 1];
-            const deltaBytes = last.bytes - first.bytes;
-            const deltaMs = last.time - first.time;
-            if (deltaBytes > 0 && deltaMs > 0) {
-              speed = Math.round(deltaBytes / (deltaMs / 1000));
-              lastKnownSpeed = speed;
-            }
-          }
-
-          // Only send non-zero speed once we have real data
-          mainWindow.webContents.send('download_progress', { gameId, receivedBytes, totalBytes, speed: speed > 0 ? speed : 0 });
+      const sendProgress = (receivedBytes, totalBytes) => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        const now = Date.now();
+        speedSamples.push({ time: now, bytes: receivedBytes });
+        while (speedSamples.length > 1 && speedSamples[0].time < now - SPEED_WINDOW_MS) {
+          speedSamples.shift();
         }
-      }, cikPath);
+        let speed = lastKnownSpeed;
+        if (speedSamples.length >= 2) {
+          const first = speedSamples[0];
+          const last = speedSamples[speedSamples.length - 1];
+          const deltaBytes = last.bytes - first.bytes;
+          const deltaMs = last.time - first.time;
+          if (deltaBytes > 0 && deltaMs > 0) {
+            speed = Math.round(deltaBytes / (deltaMs / 1000));
+            lastKnownSpeed = speed;
+          }
+        }
+        mainWindow.webContents.send('download_progress', { gameId, receivedBytes, totalBytes, speed: speed > 0 ? speed : 0 });
+      };
+
+      // Phase 1: Parallel download (for URLs only) — faster but may fall back to streaming
+      let inputPath = url;
+      const isUrl = url.startsWith('http://') || url.startsWith('https://');
+      let tempXvcPath = null;
+
+      if (isUrl) {
+        tempXvcPath = path.join(extractDir, '.xvc_download');
+        log('[download_file] Phase 1: Parallel download to', tempXvcPath);
+
+        try {
+          const dlResult = await downloadParallel(url, tempXvcPath, gameId, gameSize, sendProgress);
+          if (dlResult === 'interrupted') {
+            log('[download_file] Download interrupted by user');
+            return;
+          }
+          inputPath = tempXvcPath;
+          const dlTime = Date.now() - t2;
+          log('[download_file] Phase 1 complete:', dlTime+'ms');
+
+          sendProgress(gameSize, gameSize);
+
+          // Reset speed tracking for extraction phase
+          speedSamples.length = 0;
+          speedSamples.push({ time: Date.now(), bytes: 0 });
+          lastKnownSpeed = 0;
+        } catch (e) {
+          log('[download_file] Parallel download failed, falling back to streaming:', e.message);
+          tempXvcPath = null;
+          inputPath = url;
+          // Clean up partial temp file
+          try { if (fs.existsSync(path.join(extractDir, '.xvc_download'))) fs.unlinkSync(path.join(extractDir, '.xvc_download')); } catch {}
+        }
+      }
+
+      // Phase 2: Extraction (local file or streaming from URL)
+      if (tempXvcPath) {
+        log('[download_file] Phase 2: Local extraction from', inputPath);
+      } else {
+        log('[download_file] Phase 2: Streaming extraction from', url);
+      }
+
+      // Signal UI to show "Extracting..." label
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('extract_progress', { gameId, status: 'extracting', filePath: inputPath });
+      }
+
+      const extractResult = await extractMsixvc(inputPath, extractDir, (pct) => {
+        log('[download_file] extraction pct:', pct);
+        if (pct >= 99) log('[download_file] ===> EXTRACTION REACHED', pct);
+        const receivedBytes = gameSize > 0 ? Math.round(pct / 100 * gameSize) : pct;
+        const totalBytes = gameSize > 0 ? gameSize : 100;
+        sendProgress(receivedBytes, totalBytes);
+      }, cikPath, gameId);
+
+      if (extractResult === 'interrupted') {
+        log('[download_file] Extraction interrupted by user');
+        return;
+      }
+
       const t3 = Date.now();
-      log('[download_file] Extraction completed successfully | total time:', (t3-t0)+'ms, CIK fetch:', (t2-t1)+'ms, XvdTool:', (t3-t2)+'ms');
+      const dlTimeStr = tempXvcPath ? `${Date.now() - t2}ms` : 'N/A (streaming)';
+      log('[download_file] Extraction completed successfully | time:', (t3-t0)+'ms, CIK fetch:', (t2-t1)+'ms, download:', dlTimeStr+', XvdTool:', (t3-t2)+'ms');
+      downloadParams.delete(gameId);
+
+      // Clean up temp XVC
+      if (tempXvcPath) {
+        try { if (fs.existsSync(tempXvcPath)) { fs.unlinkSync(tempXvcPath); log('[download_file] Deleted temp XVC'); } } catch {}
+      }
 
       // Copy OnlineFix files
       log('[download_file] Copying OnlineFix files...');
@@ -652,6 +880,12 @@ function runExtraction(url, extractDir, gameId, gameSize) {
       }
     } catch (err) {
       log('[download_file] ERROR:', err.message);
+      // Clean up temp XVC on error
+      const p = downloadParams.get(gameId);
+      const tempXvc = p ? path.join(p.extractDir, '.xvc_download') : null;
+      if (tempXvc && fs.existsSync(tempXvc)) {
+        try { fs.unlinkSync(tempXvc); } catch {}
+      }
       if (fs.existsSync(extractDir)) {
         try { fs.rmSync(extractDir, { recursive: true, force: true }); log('[download_file] Cleaned up empty dir:', extractDir); } catch {}
       }
@@ -659,12 +893,244 @@ function runExtraction(url, extractDir, gameId, gameSize) {
         mainWindow.webContents.send('extract_progress', { gameId, status: 'error', error: err.message });
         mainWindow.webContents.send('download_complete', { gameId, success: false, state: err.message });
       }
+      downloadParams.delete(gameId);
     }
   })();
 }
 
-function extractMsixvc(input, outputDir, onProgress = () => {}, cikPath) {
+// Parallel HTTP download using multiple Range connections
+function downloadParallel(url, destPath, gameId, gameSize, onProgress) {
   return new Promise((resolve, reject) => {
+    (async () => {
+      try {
+        // Check for pre-existing interruption
+        const preAction = downloadActions.get(gameId);
+        if (preAction) {
+          downloadActions.delete(gameId);
+          resolve('interrupted');
+          return;
+        }
+
+        // Get file size via HEAD
+        const size = await getFileSize(url);
+        if (size <= 0) throw new Error('Could not determine file size');
+
+        log('[download_parallel] File size:', size, 'bytes');
+        onProgress(0, size);
+
+        // Pre-allocate file
+        const fd = fs.openSync(destPath, 'w');
+        fs.ftruncateSync(fd, size);
+        fs.closeSync(fd);
+
+        const NUM_CONNECTIONS = 4;
+        const MAX_RETRIES = 3;
+        const chunkSize = Math.ceil(size / NUM_CONNECTIONS);
+        const chunks = [];
+        for (let i = 0; i < NUM_CONNECTIONS; i++) {
+          const start = i * chunkSize;
+          const end = Math.min(start + chunkSize - 1, size - 1);
+          if (start > end) break;
+          chunks.push({ start, end, index: i });
+        }
+
+        log('[download_parallel] Chunks:', chunks.length, 'x', chunkSize, 'bytes');
+        const requests = [];
+        pendingDownloads.set(gameId, requests);
+
+        const progressCounters = new Array(chunks.length).fill(0);
+        let lastProgressTime = 0;
+        let completedExternally = false;
+        let forceCompleteTimer = null;
+
+        const downloadChunk = async (chunk, attempt = 0) => {
+          return new Promise((resolveChunk) => {
+            const urlObj = new URL(url);
+            const fetcher = urlObj.protocol === 'https:' ? https : http;
+            const options = {
+              hostname: urlObj.hostname,
+              port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+              path: urlObj.pathname + urlObj.search,
+              headers: {
+                'Range': `bytes=${chunk.start}-${chunk.end}`,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              },
+            };
+
+            if (!fs.existsSync(destPath)) {
+              resolveChunk('interrupted');
+              return;
+            }
+            const chunkFd = fs.openSync(destPath, 'r+');
+            let writeOffset = chunk.start;
+            let chunkBytes = 0;
+            let pendingWrites = 0;
+            let closed = false;
+            let finished = false;
+
+            const closeAnd = (cb) => {
+              if (closed) { if (cb) cb(); return; }
+              if (pendingWrites > 0) {
+                setImmediate(() => closeAnd(cb));
+                return;
+              }
+              closed = true;
+              try { fs.closeSync(chunkFd); } catch {}
+              if (cb) cb();
+            };
+
+            const tryRetry = (errMsg) => {
+              if (finished) return;
+              finished = true;
+              closeAnd(() => {
+                if (downloadActions.get(gameId)) {
+                  clearTimerAndResolve('interrupted');
+                } else if (completedExternally) {
+                  clearTimerAndResolve('ok');
+                } else if (attempt < MAX_RETRIES) {
+                  log('[download_parallel] Chunk', chunk.index, 'failed (attempt', attempt+1, '):', errMsg, '- retrying');
+                  setTimeout(() => {
+                    downloadChunk(chunk, attempt + 1).then(clearTimerAndResolve);
+                  }, Math.min(1000 * Math.pow(2, attempt), 8000));
+                } else {
+                  clearTimerAndResolve('error');
+                }
+              });
+            };
+
+            // Chunk stall timeout: 30s without data = retry
+            let chunkTimer;
+
+            const resetChunkTimer = () => {
+              clearTimeout(chunkTimer);
+              chunkTimer = setTimeout(() => {
+                log('[download_parallel] Chunk', chunk.index, 'stalled (30s no data) attempt', attempt+1);
+                tryRetry('chunk_stalled');
+              }, 30000);
+            };
+
+            // Wrap resolveChunk to clear the timeout
+            const clearTimerAndResolve = (val) => { clearTimeout(chunkTimer); resolveChunk(val); };
+
+            const req = fetcher.get(options, (res) => {
+              if (res.statusCode !== 206) {
+                tryRetry(`HTTP ${res.statusCode}`);
+                return;
+              }
+
+              resetChunkTimer();
+
+              res.on('data', (data) => {
+                resetChunkTimer();
+                pendingWrites++;
+                fs.write(chunkFd, data, 0, data.length, writeOffset, (err) => {
+                  pendingWrites--;
+                  if (err) log('[download_parallel] write error:', err.message);
+                });
+                writeOffset += data.length;
+                chunkBytes += data.length;
+                progressCounters[chunk.index] = chunkBytes;
+
+                const now = Date.now();
+                if (now - lastProgressTime > 500) {
+                  lastProgressTime = now;
+                  const total = progressCounters.reduce((a, b) => a + b, 0);
+                  onProgress(total, size);
+                  // All bytes received? Start force-complete timer
+                  if (total >= size && !completedExternally) {
+                    completedExternally = true;
+                    forceCompleteTimer = setTimeout(() => {
+                      log('[download_parallel] Force-completing after 5s at 100%');
+                      pendingDownloads.delete(gameId);
+                      for (const r of requests) { try { r.req.destroy(); } catch {} }
+                      // Chunks will error -> see completedExternally -> resolve 'ok'
+                      // Promise.all settles -> completedExternally bail-out -> resolve via success path
+                    }, 5000);
+                  }
+                }
+              });
+
+              res.on('end', () => {
+                closeAnd(() => clearTimerAndResolve('ok'));
+              });
+
+              res.on('error', (e) => { tryRetry(e.message); });
+            });
+
+            req.on('error', (e) => { tryRetry(e.message); });
+
+            requests.push({ req, chunkFd, chunkIndex: chunk.index });
+          });
+        };
+
+        const chunkResults = await Promise.all(chunks.map(c => downloadChunk(c)));
+
+        // Force-complete triggered, resolve and bail
+        if (completedExternally) { resolve(destPath); return; }
+
+        pendingDownloads.delete(gameId);
+
+        // Check if intentionally interrupted
+        if (chunkResults.includes('interrupted') || downloadActions.get(gameId)) {
+          downloadActions.delete(gameId);
+          onProgress(size, size);
+          log('[download_parallel] Interrupted by user');
+          resolve('interrupted');
+          return;
+        }
+
+        // Check for errors
+        const errors = chunkResults.filter(r => r !== 'ok');
+        if (errors.length > 0) {
+          throw new Error('Download failed: ' + errors.join(', '));
+        }
+
+        resolve(destPath);
+      } catch (e) {
+        // Clean up requests on error
+        if (!completedExternally) {
+          pendingDownloads.delete(gameId);
+          reject(e);
+        }
+      }
+    })();
+  });
+}
+
+// Get file size via Range HEAD request
+function getFileSize(url) {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const fetcher = urlObj.protocol === 'https:' ? https : http;
+    const options = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+      path: urlObj.pathname + urlObj.search,
+      method: 'GET',
+      headers: { 'Range': 'bytes=0-0', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    };
+    fetcher.get(options, (res) => {
+      const cr = res.headers['content-range'];
+      if (!cr) { resolve(0); return; }
+      const match = cr.match(/bytes 0-0\/(\d+)/);
+      if (match) resolve(parseInt(match[1], 10));
+      else resolve(0);
+      res.resume();
+    }).on('error', reject);
+  });
+}
+
+function extractMsixvc(input, outputDir, onProgress = () => {}, cikPath, gameId) {
+  return new Promise((resolve, reject) => {
+    // Check if already cancelled/paused before spawning
+    const preAction = downloadActions.get(gameId);
+    if (preAction) {
+      downloadActions.delete(gameId);
+      log('[XvdTool] Pre-spawn interruption:', preAction);
+      resolve('interrupted');
+      return;
+    }
+
     log('[XvdTool] Checking path:', xvdToolPath);
     if (!fs.existsSync(xvdToolPath)) {
       log('[XvdTool] NOT FOUND at:', xvdToolPath);
@@ -675,7 +1141,7 @@ function extractMsixvc(input, outputDir, onProgress = () => {}, cikPath) {
 
     const xvdDir = path.dirname(xvdToolPath);
 
-    const args = ['extract', input, '-o', outputDir, '-n'];
+    const args = ['extract', input, '-o', outputDir, '-n', '-j'];
     if (cikPath && fs.existsSync(cikPath)) {
       args.push('-c', cikPath);
       log('[XvdTool] Added CIK via -c:', cikPath);
@@ -688,6 +1154,7 @@ function extractMsixvc(input, outputDir, onProgress = () => {}, cikPath) {
       stdio: ['ignore', 'pipe', 'pipe'],
       cwd: xvdDir,
     });
+    activeProcesses.set(gameId, proc);
     let stderr = '';
     let stdout = '';
 
@@ -701,25 +1168,60 @@ function extractMsixvc(input, outputDir, onProgress = () => {}, cikPath) {
       const text = chunk.toString();
       stdout += text;
       const trimmed = text.trim();
-      if (trimmed) log('[XvdTool]', trimmed);
+      // Log all stdout for debugging progress
+      if (trimmed) log('[XvdTool:stdout]', trimmed);
       // Progress from main region only — match any hex region, ignore small metadata (0x40000003)
       const mainMatch = trimmed.match(/Extracting region (?:0x[0-9a-fA-F]+): (\d{1,3})%/);
-      if (mainMatch && !trimmed.includes('0x40000003')) onProgress(parseInt(mainMatch[1], 10));
+      if (mainMatch && !trimmed.includes('0x40000003')) {
+        log('[XvdTool] onProgress call:', parseInt(mainMatch[1], 10));
+        onProgress(parseInt(mainMatch[1], 10));
+      }
     });
 
     proc.stderr.on('data', (chunk) => {
       const text = chunk.toString();
       stderr += text;
       const trimmed = text.trim();
-      if (trimmed) log('[XvdTool]', trimmed);
+      if (trimmed) log('[XvdTool:stderr]', trimmed);
       const mainMatch = trimmed.match(/Extracting region (?:0x[0-9a-fA-F]+): (\d{1,3})%/);
-      if (mainMatch && !trimmed.includes('0x40000003')) onProgress(parseInt(mainMatch[1], 10));
+      if (mainMatch && !trimmed.includes('0x40000003')) {
+        log('[XvdTool] onProgress call (stderr):', parseInt(mainMatch[1], 10));
+        onProgress(parseInt(mainMatch[1], 10));
+      }
     });
 
     proc.on('close', (code) => {
       clearTimeout(timeout);
-      if (code === 0) resolve(outputDir);
-      else reject(new Error(stderr.trim() || stdout.trim() || `Exit code ${code}`));
+      activeProcesses.delete(gameId);
+      log('[XvdTool] Process closed with code:', code);
+      log('[XvdTool] Full stdout:', stdout.slice(-500));
+      log('[XvdTool] Full stderr:', stderr.slice(-500));
+
+      if (code === 0) {
+        // Check for ERR messages in output even with code 0
+        const errLine = (stdout + '\n' + stderr).match(/^ERR:.+$/m);
+        if (errLine) {
+          log('[XvdTool] Exit code 0 but error detected:', errLine[0]);
+          reject(new Error(errLine[0]));
+          return;
+        }
+        log('[XvdTool] Completed successfully');
+        // Ensure final 100% progress in case XvdTool never emitted it
+        onProgress(100);
+        resolve(outputDir);
+        return;
+      }
+
+      const action = downloadActions.get(gameId);
+      if (action) {
+        downloadActions.delete(gameId);
+        log('[XvdTool] Interrupted by user:', action);
+        resolve('interrupted');
+        return;
+      }
+
+      log('[XvdTool] Failed with code:', code);
+      reject(new Error(stderr.trim() || stdout.trim() || `Exit code ${code}`));
     });
 
     proc.on('error', (err) => {
@@ -734,19 +1236,48 @@ ipcMain.handle('uninstall_game', async (event, { gameId, folderPath }) => {
   log('[Uninstall] gameId:', gameId, 'folder:', folderPath);
   if (!folderPath || !fs.existsSync(folderPath)) return { success: false, error: 'Game folder not found' };
 
-  // Try to unregister with wdapp
+  // Try to unregister with wdapp (use manifest to find PackageFullName)
   const manifest = path.join(folderPath, 'appxmanifest.xml');
-  const wdapp = path.join(folderPath, 'wdapp.exe');
-  if (fs.existsSync(manifest) && fs.existsSync(wdapp)) {
+  if (fs.existsSync(manifest)) {
     try {
-      await new Promise((resolve, reject) => {
-        const proc = spawn(wdapp, ['unregister', manifest], { stdio: 'pipe', cwd: folderPath });
-        let err = '';
-        proc.stderr.on('data', (c) => err += c.toString());
-        proc.on('close', (code) => code === 0 ? resolve() : reject(new Error(err.trim() || `exit ${code}`)));
-        proc.on('error', reject);
-      });
-      log('[Uninstall] Unregistered successfully');
+      // Extract Package Name from manifest
+      const manifestContent = fs.readFileSync(manifest, 'utf8');
+      const nameMatch = manifestContent.match(/Identity\s+[^>]*Name\s*=\s*"([^"]+)"/);
+      if (nameMatch) {
+        const packageName = nameMatch[1];
+        log('[Uninstall] Found package name:', packageName);
+
+        // Use PowerShell to find and remove the package (handles PublisherId automatically)
+        log('[Uninstall] Enabling Developer Mode for unregister...');
+        await toggleDeveloperMode(true);
+
+        const psScript = `
+          $pkg = Get-AppxPackage -Name "${packageName}" -ErrorAction SilentlyContinue;
+          if ($pkg) {
+            $pkg | Remove-AppxPackage -ErrorAction Stop;
+            Write-Output "OK";
+          } else {
+            Write-Output "NOT_FOUND";
+          }
+        `;
+        await new Promise((resolve, reject) => {
+          const proc = spawn('powershell', ['-NoProfile', '-Command', psScript], { stdio: 'pipe' });
+          let out = '', err = '';
+          proc.stdout.on('data', (c) => out += c.toString());
+          proc.stderr.on('data', (c) => err += c.toString());
+          proc.on('close', (code) => {
+            if (code === 0 && out.includes('OK')) resolve();
+            else if (out.includes('NOT_FOUND')) { log('[Uninstall] Package not found, skipping'); resolve(); }
+            else reject(new Error(err.trim() || `exit ${code}`));
+          });
+          proc.on('error', reject);
+        });
+        log('[Uninstall] Unregistered successfully');
+        await toggleDeveloperMode(false);
+        log('[Uninstall] Developer Mode disabled');
+      } else {
+        log('[Uninstall] Could not find Package Name in manifest');
+      }
     } catch (e) {
       log('[Uninstall] Unregister failed (continuing):', e.message);
     }
@@ -907,4 +1438,11 @@ app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  for (const [gameId, proc] of activeProcesses) {
+    try { proc.kill(); } catch {}
+  }
+  activeProcesses.clear();
 });

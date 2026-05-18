@@ -39,4 +39,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
   checkAppUpdate: () => ipcRenderer.invoke('check_app_update'),
   downloadAppUpdate: (url) => ipcRenderer.invoke('download_app_update', url),
+
+  // Pause / Resume / Cancel
+  pauseDownload: (gameId) => ipcRenderer.invoke('pause_download', gameId),
+  resumeDownload: (gameId) => ipcRenderer.invoke('resume_download', gameId),
+  cancelDownload: (gameId) => ipcRenderer.invoke('cancel_download', gameId),
+  onDownloadPaused: (callback) => {
+    ipcRenderer.on('download_paused', (_event, data) => callback(data));
+  },
 });

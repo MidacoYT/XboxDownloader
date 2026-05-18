@@ -375,7 +375,7 @@ public partial class StreamedXvdFile : IDisposable
         return LocalVerifyDataHashes();
     }
 
-    public void ExtractFiles(string outputPath, in KeyEntry key, bool skipHashCheck = false, uint[]? skippedRegionList = null, uint[]? downloadRegionList = null)
+    public void ExtractFiles(string outputPath, in KeyEntry key, bool skipHashCheck = false, uint[]? skippedRegionList = null, uint[]? downloadRegionList = null, Action<long, long, long, uint>? onProgress = null)
     {
         if (!_hasXvcInfo)
         {
@@ -432,6 +432,28 @@ public partial class StreamedXvdFile : IDisposable
                     .ToArray();
         }
 
+        if (onProgress != null)
+        {
+            // Machine-readable mode: direct extraction, callback on every page
+            for (int i = 0; i < extractableRegionList.Length; i++)
+            {
+                var region = extractableRegionList[i];
+                ExtractRegion(
+                    null,
+                    fullOutputPath,
+                    cipher,
+                    (uint)region.Id,
+                    region.Offset,
+                    region.Length,
+                    region.FirstSegmentIndex,
+                    _encrypted && region.KeyId != XvcConstants.XVC_KEY_NONE,
+                    skipHashCheck,
+                    onProgress
+                );
+            }
+            return;
+        }
+
         // Fancy console version
         AnsiConsole.Progress()
             .Columns(
@@ -481,7 +503,7 @@ public partial class StreamedXvdFile : IDisposable
     }
 
     private void ExtractRegion(
-        ProgressTask progressTask,
+        ProgressTask? progressTask,
         string output,
         AesXtsDecryptorNi cipher,
         uint headerId, 
@@ -489,7 +511,8 @@ public partial class StreamedXvdFile : IDisposable
         ulong regionLength,
         uint startSegment,
         bool shouldDecrypt, 
-        bool skipHashCheck = false
+        bool skipHashCheck = false,
+        Action<long, long, long, uint>? onProgress = null
     )
     {
         Debug.Assert(_xvcUpdateSegments[(int)startSegment].PageNum == XvdMath.OffsetToPageNumber(regionOffset));
@@ -509,7 +532,7 @@ public partial class StreamedXvdFile : IDisposable
         var pageCacheOffset = 0;
 
         //var pageCache = (stackalloc byte[0x10000]);
-        var pageCache = new byte[0x100000].AsSpan();
+        var pageCache = new byte[0x2000000].AsSpan();
 
         // Hash Cache
         var refreshHashCache = _dataIntegrity;
@@ -631,7 +654,8 @@ public partial class StreamedXvdFile : IDisposable
                 }
 
                 currentPageNumber++;
-                progressTask.Increment(XvdFile.PAGE_SIZE);
+                progressTask?.Increment(XvdFile.PAGE_SIZE);
+                onProgress?.Invoke(currentPageNumber, currentPageNumber * (long)XvdFile.PAGE_SIZE, (long)regionLength, headerId);
             } while (remainingFileSize > 0);
 
             currentSegment++;
@@ -661,7 +685,7 @@ public partial class StreamedXvdFile : IDisposable
                 using var fs = File.OpenWrite(outputPath);
                 _stream.Position = (long)_embeddedXvdOffset;
 
-                var pageCache = new byte[0x100000].AsSpan();
+                var pageCache = new byte[0x2000000].AsSpan();
                 var remaining = (long)_header.EmbeddedXVDLength;
 
                 task.StartTask();
