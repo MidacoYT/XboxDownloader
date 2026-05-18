@@ -59,6 +59,10 @@ function ensureCikCacheDir() {
 function log(...args) {
   const msg = args.join(' ');
   console.log(msg);
+  try {
+    const logPath = path.join(app.getPath('userData'), 'app.log');
+    fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`);
+  } catch {}
   if (mainWindow && !mainWindow.isDestroyed()) {
     try { mainWindow.webContents.send('console_log', msg); } catch {}
   }
