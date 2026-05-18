@@ -1252,12 +1252,22 @@ ipcMain.handle('uninstall_game', async (event, { gameId, folderPath }) => {
         await toggleDeveloperMode(true);
 
         const psScript = `
-          $pkg = Get-AppxPackage -Name "${packageName}" -ErrorAction SilentlyContinue;
+          $name = "${packageName}";
+          $pkg = Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue;
           if ($pkg) {
-            $pkg | Remove-AppxPackage -ErrorAction Stop;
+            Write-Output "Found package: $($pkg.PackageFullName)";
+            $pkg | Remove-AppxPackage -AllUsers -ErrorAction Stop;
             Write-Output "OK";
           } else {
-            Write-Output "NOT_FOUND";
+            Write-Output "NOT_FOUND via Get-AppxPackage, trying provisioned...";
+            $prov = Get-AppxProvisionedPackage -Online | Where-Object { $_.PackageName -like "${packageName}*" } | Select-Object -First 1;
+            if ($prov) {
+              Write-Output "Found provisioned: $($prov.PackageName)";
+              Remove-AppxProvisionedPackage -Online -PackageName $($prov.PackageName) -ErrorAction Stop;
+              Write-Output "OK";
+            } else {
+              Write-Output "NOT_FOUND";
+            }
           }
         `;
         await new Promise((resolve, reject) => {
