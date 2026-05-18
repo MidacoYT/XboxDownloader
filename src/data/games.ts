@@ -48,6 +48,7 @@ export interface Game {
   installed?: boolean;
   downloadProgress?: number;
   state?: string;
+  installPath?: string;
   version?: string;
   latestVersion?: string;
   achievements?: number;

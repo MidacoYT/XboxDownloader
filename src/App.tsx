@@ -87,12 +87,13 @@ export default function App() {
           const s = await SettingsService.getSettings();
           const scan = await window.electronAPI?.scanInstalledGames(s.downloadPath || 'C:\\Xbox Games\\');
           if (scan?.games?.length) {
+            const basePath = (s.downloadPath || 'C:\\Xbox Games').replace(/\\+$/, '');
             setGameList(prev => prev.map(g => {
               const matchedFolder = scan.games.find(f => f.toLowerCase() === g.title.toLowerCase() || f === g.id);
               if (!matchedFolder) return g;
               const folderSizeBytes = scan.sizes?.[matchedFolder] || 0;
               const folderSizeGB = folderSizeBytes > 0 ? folderSizeBytes / (1024 * 1024 * 1024) : g.sizeGB;
-              return { ...g, installed: true, sizeGB: folderSizeGB };
+              return { ...g, installed: true, installPath: basePath + '\\' + matchedFolder, sizeGB: folderSizeGB };
             }));
           }
         } catch {}
@@ -163,7 +164,7 @@ export default function App() {
       });
       setPausedDownloads(prev => ({ ...prev, [gameId]: progress }));
     });
-    window.electronAPI?.onExtractProgress(({ gameId, status, error }) => {
+    window.electronAPI?.onExtractProgress(({ gameId, status, extractDir, error }) => {
       console.log('[App:onExtractProgress]', gameId, status, error);
       if (status === 'extracting') {
         setExtractingIds(prev => ({ ...prev, [gameId]: 'extracting' }));
@@ -174,14 +175,14 @@ export default function App() {
           return { ...prev, [gameId]: 0 };
         });
       } else if (status === 'done') {
-        console.log('[App:onExtractProgress] ===> EXTRACTION DONE FOR', gameId);
+        console.log('[App:onExtractProgress] ===> EXTRACTION DONE FOR', gameId, 'extractDir:', extractDir);
         setDownloadingIds(prev => { const n = { ...prev }; delete n[gameId]; return n; });
         setExtractingIds(prev => { const n = { ...prev }; delete n[gameId]; return n; });
         setDownloadProgressMap(prev => { const n = { ...prev }; delete n[gameId]; return n; });
         setGameList(prevGames =>
           prevGames.map(g =>
             g.id === gameId
-              ? { ...g, installed: true, hasUpdate: false, downloadProgress: 100, version: g.latestVersion }
+              ? { ...g, installed: true, installPath: extractDir, hasUpdate: false, downloadProgress: 100, version: g.latestVersion }
               : g
           )
         );
@@ -249,10 +250,15 @@ export default function App() {
     );
     setCompletedDownloads(prev => prev.filter(id => id !== game.id));
     try {
-      const settings = await SettingsService.getSettings();
-      const downloadPath = settings.downloadPath || 'C:\\Xbox Games\\';
-      const folderName = game.title.replace(/[<>:"/\\|?*]/g, '_').trim();
-      await window.electronAPI?.uninstallGame(game.id, downloadPath + folderName);
+      // Use stored installPath, else fallback to settings path
+      let folderPath = game.installPath;
+      if (!folderPath) {
+        const settings = await SettingsService.getSettings();
+        const basePath = (settings.downloadPath || 'C:\\Xbox Games').replace(/\\+$/, '');
+        const folderName = game.title.replace(/[<>:"/\\|?*]/g, '_').trim();
+        folderPath = basePath + '\\' + folderName;
+      }
+      await window.electronAPI?.uninstallGame(game.id, folderPath);
     } catch {}
   }, []);
 
@@ -304,12 +310,13 @@ export default function App() {
       const settings = await SettingsService.getSettings();
       const scan = await window.electronAPI?.scanInstalledGames(settings.downloadPath || 'C:\\Xbox Games\\');
       if (scan?.games?.length) {
+        const basePath = (settings.downloadPath || 'C:\\Xbox Games').replace(/\\+$/, '');
         setGameList(prev => prev.map(g => {
           const matchedFolder = scan.games.find(f => f.toLowerCase() === g.title.toLowerCase() || f === g.id);
           if (!matchedFolder) return { ...g, installed: false };
           const folderSizeBytes = scan.sizes?.[matchedFolder] || 0;
           const folderSizeGB = folderSizeBytes > 0 ? folderSizeBytes / (1024 * 1024 * 1024) : g.sizeGB;
-          return { ...g, installed: true, sizeGB: folderSizeGB };
+          return { ...g, installed: true, installPath: basePath + '\\' + matchedFolder, sizeGB: folderSizeGB };
         }));
       }
     } catch {}
