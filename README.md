@@ -1,5 +1,8 @@
 # Xbox Downloader
 
+old version, the newer version add epic games catalog https://github.com/MidacoYT/UniversalDownloader
+
+
 Download and install Xbox Game Pass PC games directly from Microsoft CDNs.
 
 ## Features
